@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	onceo "github.com/HalxDocs/onceo-core"
@@ -102,7 +103,11 @@ func normalizeChargeSuccess(data json.RawMessage, e onceo.Event) (onceo.Event, e
 	e.ProviderEventID = strconv.Itoa(d.ID)
 	e.Status = mapStatus(d.Status)
 	e.AmountMinor = int64(d.Amount)
-	e.Currency = sanitiseCurrency(d.Currency)
+	cur, err := sanitiseCurrency(d.Currency)
+	if err != nil {
+		return e, err
+	}
+	e.Currency = cur
 	e.Reference = d.Reference
 
 	return e, nil
@@ -117,7 +122,11 @@ func normalizeChargeFailed(data json.RawMessage, e onceo.Event) (onceo.Event, er
 	e.ProviderEventID = strconv.Itoa(d.ID)
 	e.Status = onceo.StatusFailed
 	e.AmountMinor = int64(d.Amount)
-	e.Currency = sanitiseCurrency(d.Currency)
+	cur, err := sanitiseCurrency(d.Currency)
+	if err != nil {
+		return e, err
+	}
+	e.Currency = cur
 	e.Reference = d.Reference
 
 	return e, nil
@@ -132,7 +141,11 @@ func normalizeTransferSuccess(data json.RawMessage, e onceo.Event) (onceo.Event,
 	e.ProviderEventID = strconv.Itoa(d.ID)
 	e.Status = mapStatus(d.Status)
 	e.AmountMinor = int64(d.Amount)
-	e.Currency = sanitiseCurrency(d.Currency)
+	cur, err := sanitiseCurrency(d.Currency)
+	if err != nil {
+		return e, err
+	}
+	e.Currency = cur
 	e.Reference = d.Reference
 
 	return e, nil
@@ -147,7 +160,11 @@ func normalizeTransferFailed(data json.RawMessage, e onceo.Event) (onceo.Event, 
 	e.ProviderEventID = strconv.Itoa(d.ID)
 	e.Status = onceo.StatusFailed
 	e.AmountMinor = int64(d.Amount)
-	e.Currency = sanitiseCurrency(d.Currency)
+	cur, err := sanitiseCurrency(d.Currency)
+	if err != nil {
+		return e, err
+	}
+	e.Currency = cur
 	e.Reference = d.Reference
 
 	return e, nil
@@ -166,9 +183,10 @@ func mapStatus(status string) onceo.Status {
 	}
 }
 
-func sanitiseCurrency(currency string) string {
-	if len(currency) == 3 {
-		return currency
+func sanitiseCurrency(raw string) (string, error) {
+	c := strings.ToUpper(strings.TrimSpace(raw))
+	if len(c) != 3 {
+		return "", fmt.Errorf("paystack: invalid currency code %q", raw)
 	}
-	return ""
+	return c, nil
 }
