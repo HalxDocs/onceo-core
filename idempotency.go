@@ -1,6 +1,7 @@
 package onceo
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"sync"
@@ -24,16 +25,19 @@ type Store interface {
 // durable Store implementation with a TTL matching your reconciliation
 // window.
 type MemoryStore struct {
-	mu        sync.Mutex
-	events    map[string]Event
-	order     []string
-	maxEvents int
+	mu       sync.Mutex
+	events   map[string]Event
+	order    *list.List
+	elems    map[string]*list.Element
+	maxItems int
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		events:    make(map[string]Event),
-		maxEvents: DefaultMaxMemoryEvents,
+		events:   make(map[string]Event),
+		order:    list.New(),
+		elems:    make(map[string]*list.Element),
+		maxItems: DefaultMaxMemoryEvents,
 	}
 }
 
@@ -42,8 +46,10 @@ func NewMemoryStoreWithMax(max int) *MemoryStore {
 		max = DefaultMaxMemoryEvents
 	}
 	return &MemoryStore{
-		events:    make(map[string]Event),
-		maxEvents: max,
+		events:   make(map[string]Event),
+		order:    list.New(),
+		elems:    make(map[string]*list.Element),
+		maxItems: max,
 	}
 }
 
@@ -66,14 +72,18 @@ func (s *MemoryStore) SaveIfNew(ctx context.Context, e Event) (bool, error) {
 		return false, nil
 	}
 
-	if len(s.events) >= s.maxEvents {
-		oldest := s.order[0]
-		delete(s.events, oldest)
-		s.order = s.order[1:]
+	if s.maxItems > 0 && len(s.events) >= s.maxItems {
+		oldest := s.order.Front()
+		if oldest != nil {
+			oldKey := oldest.Value.(string)
+			delete(s.events, oldKey)
+			delete(s.elems, oldKey)
+			s.order.Remove(oldest)
+		}
 	}
 
 	e.ProcessedAt = time.Now().UTC()
 	s.events[key] = e
-	s.order = append(s.order, key)
+	s.elems[key] = s.order.PushBack(key)
 	return true, nil
 }

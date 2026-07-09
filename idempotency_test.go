@@ -153,8 +153,8 @@ func TestMemoryStoreWithMax(t *testing.T) {
 
 func TestMemoryStoreWithMaxZero(t *testing.T) {
 	store := NewMemoryStoreWithMax(0)
-	if store.maxEvents != DefaultMaxMemoryEvents {
-		t.Errorf("maxEvents = %d, want %d", store.maxEvents, DefaultMaxMemoryEvents)
+	if store.maxItems != DefaultMaxMemoryEvents {
+		t.Errorf("maxItems = %d, want %d", store.maxItems, DefaultMaxMemoryEvents)
 	}
 }
 
