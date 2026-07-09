@@ -31,7 +31,11 @@ jobs:
           version: latest
 
       - name: Test with race detector
-        run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic -count=1
+        run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic -count=1 -timeout=120s
+
+      - name: Check coverage
+        run: |
+          go tool cover -func=coverage.txt | tail -1 | awk '{print $NF}' | sed 's/%//' | awk '{if ($1 < 85) {print "Coverage " $1 "% < 85%"; exit 1}}'
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

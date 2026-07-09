@@ -161,6 +161,78 @@ func TestNormalizeSTKFailed(t *testing.T) {
 	}
 }
 
+func TestProviderName(t *testing.T) {
+	p := &Provider{}
+	if got := p.Name(); got != "mpesa" {
+		t.Errorf("Name() = %q, want %q", got, "mpesa")
+	}
+}
+
+func TestParseC2B(t *testing.T) {
+	p := &Provider{}
+	body := loadFixture(t, "c2b_payment.json")
+
+	payload, err := p.ParseC2B(body)
+	if err != nil {
+		t.Fatalf("ParseC2B failed: %v", err)
+	}
+
+	if payload.TransID != "LGR12G8H1" {
+		t.Errorf("TransID = %q, want %q", payload.TransID, "LGR12G8H1")
+	}
+	if payload.BillRefNumber != "INV-001" {
+		t.Errorf("BillRefNumber = %q, want %q", payload.BillRefNumber, "INV-001")
+	}
+	if payload.TransAmount != "2000" {
+		t.Errorf("TransAmount = %q, want %q", payload.TransAmount, "2000")
+	}
+}
+
+func TestParseC2BMalformed(t *testing.T) {
+	p := &Provider{}
+	_, err := p.ParseC2B([]byte(`not json`))
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
+	}
+}
+
+func TestNormalizeC2B(t *testing.T) {
+	p := &Provider{}
+	body := loadFixture(t, "c2b_payment.json")
+
+	parsed, err := p.ParseC2B(body)
+	if err != nil {
+		t.Fatalf("ParseC2B failed: %v", err)
+	}
+
+	event, err := p.NormalizeC2B(parsed)
+	if err != nil {
+		t.Fatalf("NormalizeC2B failed: %v", err)
+	}
+
+	if event.Provider != "mpesa" {
+		t.Errorf("Provider = %q, want %q", event.Provider, "mpesa")
+	}
+	if event.Type != "c2b.payment" {
+		t.Errorf("Type = %q, want %q", event.Type, "c2b.payment")
+	}
+	if event.Status != onceo.StatusSuccess {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusSuccess)
+	}
+	if event.ProviderEventID != "LGR12G8H1" {
+		t.Errorf("ProviderEventID = %q, want %q", event.ProviderEventID, "LGR12G8H1")
+	}
+	if event.AmountMinor != 200000 {
+		t.Errorf("AmountMinor = %d, want %d", event.AmountMinor, 200000)
+	}
+	if event.Currency != "KES" {
+		t.Errorf("Currency = %q, want %q", event.Currency, "KES")
+	}
+	if event.Reference != "INV-001" {
+		t.Errorf("Reference = %q, want %q", event.Reference, "INV-001")
+	}
+}
+
 func TestProcessFullFlow(t *testing.T) {
 	body := loadFixture(t, "stk_success.json")
 

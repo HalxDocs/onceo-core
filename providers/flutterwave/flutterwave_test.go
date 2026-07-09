@@ -211,6 +211,112 @@ func TestNormalizeUnknownEvent(t *testing.T) {
 	}
 }
 
+func TestNormalizeTransferCompleted(t *testing.T) {
+	p := &Provider{}
+	body := loadFixture(t, "transfer_completed.json")
+
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+
+	if event.Provider != "flutterwave" {
+		t.Errorf("Provider = %q, want %q", event.Provider, "flutterwave")
+	}
+	if event.ProviderEventID != "5555555" {
+		t.Errorf("ProviderEventID = %q, want %q", event.ProviderEventID, "5555555")
+	}
+	if event.Type != "transfer.completed" {
+		t.Errorf("Type = %q, want %q", event.Type, "transfer.completed")
+	}
+	if event.Status != onceo.StatusSuccess {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusSuccess)
+	}
+	if event.AmountMinor != 200000 {
+		t.Errorf("AmountMinor = %d, want %d", event.AmountMinor, 200000)
+	}
+	if event.Currency != "NGN" {
+		t.Errorf("Currency = %q, want %q", event.Currency, "NGN")
+	}
+	if event.Reference != "flw_transfer_ref_001" {
+		t.Errorf("Reference = %q, want %q", event.Reference, "flw_transfer_ref_001")
+	}
+}
+
+func TestNormalizeTransferFailed(t *testing.T) {
+	p := &Provider{}
+	body := loadFixture(t, "transfer_failed.json")
+
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+
+	if event.Type != "transfer.failed" {
+		t.Errorf("Type = %q, want %q", event.Type, "transfer.failed")
+	}
+	if event.Status != onceo.StatusFailed {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusFailed)
+	}
+}
+
+func TestNormalizeChargePending(t *testing.T) {
+	p := &Provider{}
+	body := loadFixture(t, "charge_pending.json")
+
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+
+	if event.Type != "charge.completed" {
+		t.Errorf("Type = %q, want %q", event.Type, "charge.completed")
+	}
+	if event.Status != onceo.StatusSuccess {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusSuccess)
+	}
+}
+
+func TestNormalizeChargeSuccessEvent(t *testing.T) {
+	p := &Provider{}
+	body := loadFixture(t, "charge_success.json")
+
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+
+	if event.Type != "charge.success" {
+		t.Errorf("Type = %q, want %q", event.Type, "charge.success")
+	}
+	if event.Status != onceo.StatusSuccess {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusSuccess)
+	}
+	if event.AmountMinor != 25000 {
+		t.Errorf("AmountMinor = %d, want %d", event.AmountMinor, 25000)
+	}
+}
+
 func TestProcessFullFlow(t *testing.T) {
 	secretHash := "flw_secret_hash"
 	body := loadFixture(t, "charge_completed.json")
@@ -252,7 +358,7 @@ func TestProcessDuplicate(t *testing.T) {
 }
 
 func FuzzParse(f *testing.F) {
-	fixtures := []string{"charge_completed.json", "charge_failed.json"}
+	fixtures := []string{"charge_completed.json", "charge_failed.json", "charge_success.json", "transfer_completed.json", "transfer_failed.json"}
 	for _, name := range fixtures {
 		data, err := os.ReadFile("testdata/" + name)
 		if err == nil {

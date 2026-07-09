@@ -29,23 +29,19 @@ type STKCallbackPayload struct {
 }
 
 type C2BPayload struct {
-	Body struct {
-		Transaction struct {
-			TransactionType   string `json:"TransactionType"`
-			TransID           string `json:"TransID"`
-			TransTime         string `json:"TransTime"`
-			TransAmount       string `json:"TransAmount"`
-			BusinessShortCode string `json:"BusinessShortCode"`
-			BillRefNumber     string `json:"BillRefNumber"`
-			InvoiceNumber     string `json:"InvoiceNumber"`
-			OrgAccountBalance string `json:"OrgAccountBalance"`
-			ThirdPartyTransID string `json:"ThirdPartyTransID"`
-			MSISDN            string `json:"MSISDN"`
-			FirstName         string `json:"FirstName"`
-			MiddleName        string `json:"MiddleName"`
-			LastName          string `json:"LastName"`
-		} `json:"stkCallback"`
-	} `json:"Body"`
+	TransactionType   string `json:"TransactionType"`
+	TransID           string `json:"TransID"`
+	TransTime         string `json:"TransTime"`
+	TransAmount       string `json:"TransAmount"`
+	BusinessShortCode string `json:"BusinessShortCode"`
+	BillRefNumber     string `json:"BillRefNumber"`
+	InvoiceNumber     string `json:"InvoiceNumber"`
+	OrgAccountBalance string `json:"OrgAccountBalance"`
+	ThirdPartyTransID string `json:"ThirdPartyTransID"`
+	MSISDN            string `json:"MSISDN"`
+	FirstName         string `json:"FirstName"`
+	MiddleName        string `json:"MiddleName"`
+	LastName          string `json:"LastName"`
 }
 
 type Provider struct {
@@ -138,19 +134,17 @@ func (p *Provider) ParseC2B(body []byte) (C2BPayload, error) {
 }
 
 func (p *Provider) NormalizeC2B(raw C2BPayload) (onceo.Event, error) {
-	txn := raw.Body.Transaction
-
 	var amount int64
-	fmt.Sscanf(txn.TransAmount, "%d", &amount)
+	fmt.Sscanf(raw.TransAmount, "%d", &amount)
 
 	event := onceo.Event{
 		Provider:        ProviderName,
-		ProviderEventID: txn.TransID,
+		ProviderEventID: raw.TransID,
 		Type:            "c2b.payment",
 		Status:          onceo.StatusSuccess,
 		AmountMinor:     amount * 100,
 		Currency:        "KES",
-		Reference:       txn.BillRefNumber,
+		Reference:       raw.BillRefNumber,
 		ReceivedAt:      time.Now().UTC(),
 	}
 
