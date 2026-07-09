@@ -1,7 +1,7 @@
 package mpesa
 
 import (
-	"crypto/hmac"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,7 +71,7 @@ func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
 	if err != nil {
 		return err
 	}
-	if !hmac.Equal([]byte(token), []byte(p.callbackToken)) {
+	if subtle.ConstantTimeCompare([]byte(token), []byte(p.callbackToken)) != 1 {
 		return onceo.ErrInvalidSignature
 	}
 	return nil
@@ -142,6 +142,9 @@ func (p *Provider) NormalizeC2B(raw C2BPayload) (onceo.Event, error) {
 	f, err := strconv.ParseFloat(strings.TrimSpace(raw.TransAmount), 64)
 	if err != nil {
 		return onceo.Event{}, fmt.Errorf("mpesa: invalid c2b amount %q: %w", raw.TransAmount, err)
+	}
+	if f < 0 {
+		return onceo.Event{}, fmt.Errorf("mpesa: negative c2b amount %q rejected", raw.TransAmount)
 	}
 	amount := int64(math.Round(f * 100))
 
