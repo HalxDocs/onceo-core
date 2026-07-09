@@ -20,8 +20,11 @@ Usage:
 	headers := r.Header
 	body, _ := io.ReadAll(r.Body)
 
-	paystackProvider := &paystack.Provider{SecretKey: "sk_..."}
-	event, err := onceo.Process(ctx, paystackProvider, store, headers, body)
+	adapter, err := paystack.New(os.Getenv("PAYSTACK_SECRET_KEY"))
+	if err != nil {
+		// handle configuration error
+	}
+	event, err := onceo.Process(ctx, adapter, store, headers, body)
 	if errors.Is(err, onceo.ErrInvalidSignature) {
 		// handle bad signature
 	}
