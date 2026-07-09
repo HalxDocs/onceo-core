@@ -277,6 +277,28 @@ func TestNormalizeUnknownEvent(t *testing.T) {
 	}
 }
 
+func TestNormalizeInvalidCurrency(t *testing.T) {
+	raw := struct {
+		Event string          `json:"event"`
+		Data  json.RawMessage `json:"data"`
+	}{
+		Event: "charge.success",
+		Data:  json.RawMessage(`{"id":1,"status":"success","reference":"r","amount":1000,"currency":"NGNx"}`),
+	}
+
+	body, _ := json.Marshal(raw)
+	p, _ := New("dummy_key")
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	_, err = p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for invalid currency")
+	}
+}
+
 func TestProcessFullFlow(t *testing.T) {
 	secret := "sk_test_abc123"
 	body := loadFixture(t, "charge_success.json")
