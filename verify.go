@@ -2,17 +2,40 @@ package onceo
 
 import (
 	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
 )
 
+const (
+	SHA512HexLength = 128
+	SHA256HexLength = 64
+	MaxBodySize     = 1 << 20
+)
+
 func VerifyHMACSHA512(secret []byte, body []byte, signature string) error {
+	if len(signature) != SHA512HexLength {
+		return ErrInvalidSignature
+	}
 	mac := hmac.New(sha512.New, secret)
 	mac.Write(body)
 	expected := hex.EncodeToString(mac.Sum(nil))
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) != 1 {
+		return ErrInvalidSignature
+	}
+	return nil
+}
 
-	if !hmac.Equal([]byte(expected), []byte(signature)) {
+func VerifyHMACSHA256(secret []byte, body []byte, signature string) error {
+	if len(signature) != SHA256HexLength {
+		return ErrInvalidSignature
+	}
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(body)
+	expected := hex.EncodeToString(mac.Sum(nil))
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) != 1 {
 		return ErrInvalidSignature
 	}
 	return nil

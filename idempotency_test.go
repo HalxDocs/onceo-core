@@ -117,6 +117,41 @@ func TestMemoryStoreContextCancel(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreWithMax(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStoreWithMax(2)
+
+	e1 := Event{ID: "1", Provider: "p", ProviderEventID: "1", ReceivedAt: time.Now().UTC()}
+	e2 := Event{ID: "2", Provider: "p", ProviderEventID: "2", ReceivedAt: time.Now().UTC()}
+	e3 := Event{ID: "3", Provider: "p", ProviderEventID: "3", ReceivedAt: time.Now().UTC()}
+
+	if err := store.Save(ctx, e1); err != nil {
+		t.Fatalf("Save e1 failed: %v", err)
+	}
+	if err := store.Save(ctx, e2); err != nil {
+		t.Fatalf("Save e2 failed: %v", err)
+	}
+	if err := store.Save(ctx, e3); err != nil {
+		t.Fatalf("Save e3 failed: %v", err)
+	}
+
+	seen1, _ := store.SeenBefore(ctx, "p", "1")
+	if seen1 {
+		t.Error("e1 should have been evicted")
+	}
+	seen3, _ := store.SeenBefore(ctx, "p", "3")
+	if !seen3 {
+		t.Error("e3 should be present")
+	}
+}
+
+func TestMemoryStoreWithMaxZero(t *testing.T) {
+	store := NewMemoryStoreWithMax(0)
+	if store.maxEvents != DefaultMaxMemoryEvents {
+		t.Errorf("maxEvents = %d, want %d", store.maxEvents, DefaultMaxMemoryEvents)
+	}
+}
+
 func TestMemoryStoreDifferentProviders(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()

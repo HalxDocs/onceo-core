@@ -152,3 +152,52 @@ func TestProcessProviderErrorWrapping(t *testing.T) {
 		t.Errorf("expected provider testrail, got %s", pErr.Provider)
 	}
 }
+
+func TestProcessBodyTooLarge(t *testing.T) {
+	ctx := context.Background()
+	provider := &testProvider{name: "test"}
+	store := NewMemoryStore()
+
+	bigBody := make([]byte, MaxBodySize+1)
+	_, err := Process(ctx, provider, store, http.Header{}, bigBody)
+	if err == nil {
+		t.Error("expected error for body exceeding max size")
+	}
+}
+
+func TestProcessEmptyBody(t *testing.T) {
+	ctx := context.Background()
+	provider := &testProvider{name: "test", verifyErr: ErrInvalidSignature}
+	store := NewMemoryStore()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte{})
+	if err == nil {
+		t.Error("expected error for missing signature")
+	}
+}
+
+func TestProcessSetsID(t *testing.T) {
+	ctx := context.Background()
+	provider := &testProvider{
+		name:            "test",
+		providerEventID: "evt_001",
+		normalizeResult: Event{
+			Provider:        "test",
+			ProviderEventID: "evt_001",
+			Type:            "charge.success",
+			Status:          StatusSuccess,
+		},
+	}
+	store := NewMemoryStore()
+
+	event, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+	if event.ID == "" {
+		t.Error("expected Event.ID to be set by Process")
+	}
+	if len(event.RawPayload) == 0 {
+		t.Error("expected RawPayload to be set by Process")
+	}
+}

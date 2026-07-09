@@ -201,6 +201,43 @@ func TestNormalizeUnknownEvent(t *testing.T) {
 	}
 }
 
+func TestProviderName(t *testing.T) {
+	p := &Provider{}
+	if name := p.Name(); name != "opay" {
+		t.Errorf("Name() = %q, want %q", name, "opay")
+	}
+}
+
+func TestNormalizeInvalidAmount(t *testing.T) {
+	raw := struct {
+		EventType string          `json:"eventType"`
+		Data      json.RawMessage `json:"data"`
+	}{
+		EventType: "PAYMENT_SUCCESSFUL",
+		Data:      json.RawMessage(`{"reference":"r","amount":"not_a_number","currency":"NGN","status":"SUCCESS","orderNo":"o"}`),
+	}
+
+	body, _ := json.Marshal(raw)
+	p := &Provider{}
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	_, err = p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for invalid amount")
+	}
+}
+
+func TestVerifySignatureEmptyKey(t *testing.T) {
+	p := &Provider{SecretKey: ""}
+	err := p.VerifySignature(http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Error("expected error for empty secret key")
+	}
+}
+
 func TestProcessFullFlow(t *testing.T) {
 	secret := "opay_secret_key_123"
 	body := loadFixture(t, "payment_successful.json")

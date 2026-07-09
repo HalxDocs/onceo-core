@@ -2,12 +2,16 @@ package mpesa
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	onceo "github.com/HalxDocs/onceo-core"
 )
+
+var ErrMpesaNoSignature = errors.New("mpesa: no cryptographic signature scheme; set InsecureSkipVerify=true and configure network-level IP allowlisting")
 
 const ProviderName = "mpesa"
 
@@ -45,7 +49,7 @@ type C2BPayload struct {
 }
 
 type Provider struct {
-	AllowedIPs []string
+	InsecureSkipVerify bool
 }
 
 func (p *Provider) Name() string {
@@ -53,25 +57,10 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
-	if len(p.AllowedIPs) == 0 {
+	if p.InsecureSkipVerify {
 		return nil
 	}
-
-	remoteIP := headers.Get("X-Forwarded-For")
-	if remoteIP == "" {
-		remoteIP = headers.Get("X-Real-IP")
-	}
-	if remoteIP == "" {
-		return nil
-	}
-
-	for _, allowed := range p.AllowedIPs {
-		if remoteIP == allowed {
-			return nil
-		}
-	}
-
-	return onceo.ErrInvalidSignature
+	return ErrMpesaNoSignature
 }
 
 func (p *Provider) Parse(body []byte) (STKCallbackPayload, error) {
@@ -103,13 +92,7 @@ func (p *Provider) Normalize(raw STKCallbackPayload) (onceo.Event, error) {
 			for _, item := range cb.CallbackMetadata.Item {
 				switch item.Name {
 				case "Amount":
-					if v, ok := item.Value.(float64); ok {
-						event.AmountMinor = int64(v * 100)
-					}
-				case "MpesaReceiptNumber":
-					if v, ok := item.Value.(string); ok {
-						event.ProviderEventID = v
-					}
+					event.AmountMinor = extractAmount(item.Value)
 				}
 			}
 		}
@@ -149,4 +132,21 @@ func (p *Provider) NormalizeC2B(raw C2BPayload) (onceo.Event, error) {
 	}
 
 	return event, nil
+}
+
+func extractAmount(v interface{}) int64 {
+	switch val := v.(type) {
+	case float64:
+		return int64(val * 100)
+	case int:
+		return int64(val * 100)
+	case int64:
+		return val * 100
+	case string:
+		amount, err := strconv.ParseFloat(val, 64)
+		if err == nil {
+			return int64(amount * 100)
+		}
+	}
+	return 0
 }

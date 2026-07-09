@@ -47,6 +47,9 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
+	if p.SecretKey == "" {
+		return onceo.ErrInvalidSignature
+	}
 	signature, err := onceo.ExtractHeader(headers, "X-Paystack-Signature")
 	if err != nil {
 		return err
@@ -69,7 +72,6 @@ func (p *Provider) Normalize(raw WebhookPayload) (onceo.Event, error) {
 	event := onceo.Event{
 		Provider:   ProviderName,
 		Type:       raw.Event,
-		RawPayload: nil,
 		ReceivedAt: time.Now().UTC(),
 	}
 

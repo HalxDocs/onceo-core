@@ -1,6 +1,7 @@
 package mpesa
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"testing"
@@ -19,41 +20,26 @@ func loadFixture(t *testing.T, name string) []byte {
 
 func TestVerifySignature(t *testing.T) {
 	tests := []struct {
-		name    string
-		headers http.Header
-		allowed []string
-		wantErr bool
+		name              string
+		insecureSkipVerify bool
+		wantErr           bool
 	}{
 		{
-			name:    "no IP restriction",
-			headers: http.Header{},
-			allowed: nil,
-			wantErr: false,
+			name:              "insecure skip verify",
+			insecureSkipVerify: true,
+			wantErr:           false,
 		},
 		{
-			name:    "allowed IP",
-			headers: http.Header{"X-Forwarded-For": {"196.1.2.3"}},
-			allowed: []string{"196.1.2.3"},
-			wantErr: false,
-		},
-		{
-			name:    "disallowed IP",
-			headers: http.Header{"X-Forwarded-For": {"1.2.3.4"}},
-			allowed: []string{"196.1.2.3"},
-			wantErr: true,
-		},
-		{
-			name:    "allowed via X-Real-IP",
-			headers: http.Header{"X-Real-IP": {"196.1.2.3"}},
-			allowed: []string{"196.1.2.3"},
-			wantErr: false,
+			name:              "default no verification",
+			insecureSkipVerify: false,
+			wantErr:           true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Provider{AllowedIPs: tt.allowed}
-			err := p.VerifySignature(tt.headers, nil)
+			p := &Provider{InsecureSkipVerify: tt.insecureSkipVerify}
+			err := p.VerifySignature(http.Header{}, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("VerifySignature() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -168,6 +154,31 @@ func TestProviderName(t *testing.T) {
 	}
 }
 
+func TestExtractAmount(t *testing.T) {
+	tests := []struct {
+		name  string
+		input interface{}
+		want  int64
+	}{
+		{"float64", float64(1500.0), 150000},
+		{"int", 1500, 150000},
+		{"int64", int64(1500), 150000},
+		{"string", "1500", 150000},
+		{"string decimal", "12.50", 1250},
+		{"nil", nil, 0},
+		{"invalid string", "abc", 0},
+		{"bool", true, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractAmount(tt.input); got != tt.want {
+				t.Errorf("extractAmount(%v) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseC2B(t *testing.T) {
 	p := &Provider{}
 	body := loadFixture(t, "c2b_payment.json")
@@ -236,7 +247,7 @@ func TestNormalizeC2B(t *testing.T) {
 func TestProcessFullFlow(t *testing.T) {
 	body := loadFixture(t, "stk_success.json")
 
-	p := &Provider{}
+	p := &Provider{InsecureSkipVerify: true}
 	store := onceo.NewMemoryStore()
 
 	event, err := onceo.Process(t.Context(), p, store, http.Header{}, body)
@@ -252,6 +263,67 @@ func TestProcessFullFlow(t *testing.T) {
 	}
 	if event.Currency != "KES" {
 		t.Errorf("Currency = %q, want %q", event.Currency, "KES")
+	}
+}
+
+func TestNormalizeSTKResultCode1032(t *testing.T) {
+	p := &Provider{}
+	payload := struct {
+		Body struct {
+			StkCallback struct {
+				MerchantRequestID string `json:"MerchantRequestID"`
+				CheckoutRequestID  string `json:"CheckoutRequestID"`
+				ResultCode         int    `json:"ResultCode"`
+				ResultDesc         string `json:"ResultDesc"`
+			} `json:"stkCallback"`
+		} `json:"Body"`
+	}{}
+	payload.Body.StkCallback.CheckoutRequestID = "ws_test_1032"
+	payload.Body.StkCallback.ResultCode = 1032
+	payload.Body.StkCallback.ResultDesc = "Request cancelled by user"
+
+	body, _ := json.Marshal(payload)
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	if event.Status != onceo.StatusFailed {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusFailed)
+	}
+}
+
+func TestNormalizeSTKDefaultResultCode(t *testing.T) {
+	p := &Provider{}
+	payload := struct {
+		Body struct {
+			StkCallback struct {
+				MerchantRequestID string `json:"MerchantRequestID"`
+				CheckoutRequestID  string `json:"CheckoutRequestID"`
+				ResultCode         int    `json:"ResultCode"`
+				ResultDesc         string `json:"ResultDesc"`
+			} `json:"stkCallback"`
+		} `json:"Body"`
+	}{}
+	payload.Body.StkCallback.CheckoutRequestID = "ws_test_9999"
+	payload.Body.StkCallback.ResultCode = 9999
+
+	body, _ := json.Marshal(payload)
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	if event.Status != onceo.StatusFailed {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusFailed)
 	}
 }
 

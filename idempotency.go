@@ -7,19 +7,34 @@ import (
 	"time"
 )
 
+const DefaultMaxMemoryEvents = 100000
+
 type Store interface {
 	SeenBefore(ctx context.Context, provider, providerEventID string) (bool, error)
 	Save(ctx context.Context, e Event) error
 }
 
 type MemoryStore struct {
-	mu     sync.RWMutex
-	events map[string]Event
+	mu        sync.RWMutex
+	events    map[string]Event
+	order     []string
+	maxEvents int
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		events: make(map[string]Event),
+		events:    make(map[string]Event),
+		maxEvents: DefaultMaxMemoryEvents,
+	}
+}
+
+func NewMemoryStoreWithMax(max int) *MemoryStore {
+	if max <= 0 {
+		max = DefaultMaxMemoryEvents
+	}
+	return &MemoryStore{
+		events:    make(map[string]Event),
+		maxEvents: max,
 	}
 }
 
@@ -56,7 +71,14 @@ func (s *MemoryStore) Save(ctx context.Context, e Event) error {
 		return ErrDuplicateEvent
 	}
 
+	if len(s.events) >= s.maxEvents {
+		oldest := s.order[0]
+		delete(s.events, oldest)
+		s.order = s.order[1:]
+	}
+
 	e.ProcessedAt = time.Now().UTC()
 	s.events[key] = e
+	s.order = append(s.order, key)
 	return nil
 }

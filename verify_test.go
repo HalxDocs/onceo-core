@@ -2,6 +2,7 @@ package onceo
 
 import (
 	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
 	"net/http"
@@ -104,5 +105,53 @@ func TestVerifyWithExtractHeader(t *testing.T) {
 
 	if err := VerifyHMACSHA512(secret, body, signature); err != nil {
 		t.Errorf("VerifyHMACSHA512 failed: %v", err)
+	}
+}
+
+func TestVerifyHMACSHA256(t *testing.T) {
+	secret := []byte("test-secret-key")
+	body := []byte(`{"event":"charge.completed"}`)
+
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(body)
+	validSig := hex.EncodeToString(mac.Sum(nil))
+
+	if err := VerifyHMACSHA256(secret, body, validSig); err != nil {
+		t.Errorf("VerifyHMACSHA256 failed: %v", err)
+	}
+
+	if err := VerifyHMACSHA256(secret, body, "too-short"); err == nil {
+		t.Error("expected error for short signature")
+	}
+}
+
+func TestVerifyHMACSHA512WrongLength(t *testing.T) {
+	secret := []byte("key")
+	body := []byte(`{}`)
+
+	tests := []struct {
+		name      string
+		signature string
+	}{
+		{"too short", "abc"},
+		{"too long", "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890xxx"},
+		{"empty", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := VerifyHMACSHA512(secret, body, tt.signature); err == nil {
+				t.Error("expected error for wrong-length signature")
+			}
+		})
+	}
+}
+
+func TestVerifyHMACSHA256WrongLength(t *testing.T) {
+	secret := []byte("key")
+	body := []byte(`{}`)
+
+	if err := VerifyHMACSHA256(secret, body, "short"); err == nil {
+		t.Error("expected error for short signature")
 	}
 }

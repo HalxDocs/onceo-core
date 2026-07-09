@@ -1,9 +1,6 @@
 package flutterwave
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -47,19 +44,14 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
+	if p.SecretHash == "" {
+		return onceo.ErrInvalidSignature
+	}
 	signature, err := onceo.ExtractHeader(headers, "Verif-Hash")
 	if err != nil {
 		return err
 	}
-
-	mac := hmac.New(sha256.New, []byte(p.SecretHash))
-	mac.Write(body)
-	expected := hex.EncodeToString(mac.Sum(nil))
-
-	if !hmac.Equal([]byte(signature), []byte(expected)) {
-		return onceo.ErrInvalidSignature
-	}
-	return nil
+	return onceo.VerifyHMACSHA256([]byte(p.SecretHash), body, signature)
 }
 
 func (p *Provider) Parse(body []byte) (WebhookPayload, error) {

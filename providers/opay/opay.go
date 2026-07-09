@@ -1,12 +1,10 @@
 package opay
 
 import (
-	"crypto/hmac"
-	"crypto/sha512"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	onceo "github.com/HalxDocs/onceo-core"
@@ -38,6 +36,9 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
+	if p.SecretKey == "" {
+		return onceo.ErrInvalidSignature
+	}
 	signature, err := onceo.ExtractHeader(headers, "Authorization")
 	if err != nil {
 		signature, err = onceo.ExtractHeader(headers, "Opay-Signature")
@@ -45,15 +46,7 @@ func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
 			return err
 		}
 	}
-
-	mac := hmac.New(sha512.New, []byte(p.SecretKey))
-	mac.Write(body)
-	expected := hex.EncodeToString(mac.Sum(nil))
-
-	if !hmac.Equal([]byte(signature), []byte(expected)) {
-		return onceo.ErrInvalidSignature
-	}
-	return nil
+	return onceo.VerifyHMACSHA512([]byte(p.SecretKey), body, signature)
 }
 
 func (p *Provider) Parse(body []byte) (WebhookPayload, error) {
@@ -97,8 +90,10 @@ func normalizePayment(data json.RawMessage, e onceo.Event, status onceo.Status) 
 	e.Reference = d.Reference
 	e.Currency = d.Currency
 
-	amount := int64(0)
-	fmt.Sscanf(d.Amount, "%d", &amount)
+	amount, err := strconv.ParseInt(d.Amount, 10, 64)
+	if err != nil {
+		return e, fmt.Errorf("%w: invalid amount: %s", onceo.ErrMalformedPayload, d.Amount)
+	}
 	e.AmountMinor = amount
 
 	return e, nil
