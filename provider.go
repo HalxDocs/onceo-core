@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"net/http"
+	"time"
 )
 
 type Provider[T any] interface {
@@ -14,10 +16,14 @@ type Provider[T any] interface {
 	Normalize(parsed T) (Event, error)
 }
 
-func generateID() string {
+func generateID(r io.Reader) (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+	if _, err := io.ReadFull(r, b); err != nil {
+		return "", fmt.Errorf("generating event id: %w", err)
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
 func Process[T any](ctx context.Context, p Provider[T], store Store, headers http.Header, body []byte) (Event, error) {
@@ -39,8 +45,18 @@ func Process[T any](ctx context.Context, p Provider[T], store Store, headers htt
 		return Event{}, WrapProviderError(p.Name(), err)
 	}
 
-	event.ID = generateID()
+	if event.ProviderEventID == "" {
+		return Event{}, WrapProviderError(p.Name(), ErrEventParseFailed)
+	}
+
+	id, err := generateID(rand.Reader)
+	if err != nil {
+		return Event{}, fmt.Errorf("onceo: %w", err)
+	}
+	event.ID = id
+	event.Provider = p.Name()
 	event.RawPayload = body
+	event.ReceivedAt = time.Now().UTC()
 
 	created, err := store.SaveIfNew(ctx, event)
 	if err != nil {
