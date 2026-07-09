@@ -54,7 +54,7 @@ func SingleHeader(headers http.Header, key string) (string, error) {
 	values := headers.Values(key)
 	switch len(values) {
 	case 0:
-		return "", fmt.Errorf("%w: missing %s header", ErrInvalidSignature, key)
+		return "", fmt.Errorf("%w: missing %s header", ErrMissingHeader, key)
 	case 1:
 		return values[0], nil
 	default:
