@@ -2,7 +2,7 @@
   "eventType": "PAYMENT_FAILED",
   "data": {
     "reference": "opay_ref_002",
-    "amount": "12000",
+    "amount": "120.00",
     "currency": "NGN",
     "status": "FAILED",
     "orderNo": "ORDER_67890",

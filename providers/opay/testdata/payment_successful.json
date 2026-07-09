@@ -2,7 +2,7 @@
   "eventType": "PAYMENT_SUCCESSFUL",
   "data": {
     "reference": "opay_ref_001",
-    "amount": "45000",
+    "amount": "450.00",
     "currency": "NGN",
     "status": "SUCCESS",
     "orderNo": "ORDER_12345",

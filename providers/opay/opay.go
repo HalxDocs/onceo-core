@@ -45,15 +45,16 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
-	signature, err := onceo.SingleHeader(headers, "Authorization")
+	sig, err := onceo.SingleHeader(headers, "Authorization")
 	if err != nil {
-		var e error
-		signature, e = onceo.SingleHeader(headers, "Opay-Signature")
-		if e != nil {
-			return err
+		var sig2 string
+		sig2, err2 := onceo.SingleHeader(headers, "Opay-Signature")
+		if err2 != nil {
+			return fmt.Errorf("opay: neither Authorization nor Opay-Signature present (%v, %v)", err, err2)
 		}
+		sig = sig2
 	}
-	return onceo.VerifyHMACSHA512([]byte(p.secretKey), body, signature)
+	return onceo.VerifyHMACSHA512([]byte(p.secretKey), body, sig)
 }
 
 func (p *Provider) Parse(body []byte) (WebhookPayload, error) {
@@ -115,5 +116,5 @@ func parseOpayAmount(raw string) (int64, error) {
 	if f < 0 {
 		return 0, fmt.Errorf("negative amount %q", raw)
 	}
-	return int64(math.Round(f)), nil
+	return int64(math.Round(f * 100)), nil
 }
