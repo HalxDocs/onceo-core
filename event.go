@@ -45,15 +45,15 @@ func StatusFromString(s string) (Status, error) {
 }
 
 type Event struct {
-	ID              string
-	Provider        string
-	ProviderEventID string
-	Type            string
-	Status          Status
-	AmountMinor     int64
-	Currency        string
-	Reference       string
-	RawPayload      []byte
-	ReceivedAt      time.Time
-	ProcessedAt     time.Time
+	ID              string    `json:"id"`
+	Provider        string    `json:"provider"`
+	ProviderEventID string    `json:"provider_event_id"`
+	Type            string    `json:"type"`
+	Status          Status    `json:"status"`
+	AmountMinor     int64     `json:"amount_minor"`
+	Currency        string    `json:"currency"`
+	Reference       string    `json:"reference"`
+	RawPayload      []byte    `json:"raw_payload"`
+	ReceivedAt      time.Time `json:"received_at"`
+	ProcessedAt     time.Time `json:"processed_at"`
 }
