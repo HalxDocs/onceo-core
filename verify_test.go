@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"testing"
 )
@@ -155,3 +156,32 @@ func TestVerifyHMACSHA256WrongLength(t *testing.T) {
 		t.Error("expected error for short signature")
 	}
 }
+
+func TestSingleHeader_Missing_ReturnsErrMissingHeader(t *testing.T) {
+	_, err := SingleHeader(http.Header{}, "X-Test")
+	if !errors.Is(err, ErrMissingHeader) {
+		t.Fatalf("expected ErrMissingHeader, got %v", err)
+	}
+}
+
+func TestSingleHeader_Duplicate_ReturnsErrInvalidSignature(t *testing.T) {
+	h := http.Header{"X-Test": {"a", "b"}}
+	_, err := SingleHeader(h, "X-Test")
+	if !errors.Is(err, ErrInvalidSignature) {
+		t.Fatalf("expected ErrInvalidSignature, got %v", err)
+	}
+}
+
+func TestSingleHeader_Single_ReturnsValue(t *testing.T) {
+	h := http.Header{}
+	h.Set("X-Test", "value")
+	got, err := SingleHeader(h, "X-Test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "value" {
+		t.Fatalf("got %q, want %q", got, "value")
+	}
+}
+
+
