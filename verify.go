@@ -6,6 +6,7 @@ import (
 	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 )
 
@@ -47,4 +48,16 @@ func ExtractHeader(headers http.Header, key string) (string, error) {
 		return "", ErrMissingHeader
 	}
 	return v, nil
+}
+
+func SingleHeader(headers http.Header, key string) (string, error) {
+	values := headers.Values(key)
+	switch len(values) {
+	case 0:
+		return "", fmt.Errorf("%w: missing %s header", ErrInvalidSignature, key)
+	case 1:
+		return values[0], nil
+	default:
+		return "", fmt.Errorf("%w: multiple %s headers present", ErrInvalidSignature, key)
+	}
 }

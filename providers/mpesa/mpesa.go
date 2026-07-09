@@ -1,17 +1,20 @@
 package mpesa
 
 import (
+	"crypto/hmac"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	onceo "github.com/HalxDocs/onceo-core"
 )
 
-var ErrMpesaNoSignature = errors.New("mpesa: no cryptographic signature scheme; set InsecureSkipVerify=true and configure network-level IP allowlisting")
+var ErrMpesaNoSignature = errors.New("mpesa: no cryptographic signature scheme; use callback URL path token verification instead")
 
 const ProviderName = "mpesa"
 
@@ -49,7 +52,14 @@ type C2BPayload struct {
 }
 
 type Provider struct {
-	InsecureSkipVerify bool
+	callbackToken string
+}
+
+func New(callbackToken string) (*Provider, error) {
+	if len(callbackToken) < 32 {
+		return nil, fmt.Errorf("mpesa: callback token must be at least 32 bytes of entropy")
+	}
+	return &Provider{callbackToken: callbackToken}, nil
 }
 
 func (p *Provider) Name() string {
@@ -57,10 +67,14 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
-	if p.InsecureSkipVerify {
-		return nil
+	token, err := onceo.SingleHeader(headers, "X-Onceo-Mpesa-Callback-Token")
+	if err != nil {
+		return err
 	}
-	return ErrMpesaNoSignature
+	if !hmac.Equal([]byte(token), []byte(p.callbackToken)) {
+		return onceo.ErrInvalidSignature
+	}
+	return nil
 }
 
 func (p *Provider) Parse(body []byte) (STKCallbackPayload, error) {
@@ -77,6 +91,10 @@ func (p *Provider) Parse(body []byte) (STKCallbackPayload, error) {
 func (p *Provider) Normalize(raw STKCallbackPayload) (onceo.Event, error) {
 	cb := raw.Body.StkCallback
 
+	if cb.CheckoutRequestID == "" {
+		return onceo.Event{}, fmt.Errorf("mpesa: missing CheckoutRequestID, cannot deduplicate safely")
+	}
+
 	event := onceo.Event{
 		Provider:        ProviderName,
 		ProviderEventID: cb.CheckoutRequestID,
@@ -92,7 +110,11 @@ func (p *Provider) Normalize(raw STKCallbackPayload) (onceo.Event, error) {
 			for _, item := range cb.CallbackMetadata.Item {
 				switch item.Name {
 				case "Amount":
-					event.AmountMinor = extractAmount(item.Value)
+					var err error
+					event.AmountMinor, err = parseMpesaAmount(item.Value)
+					if err != nil {
+						return onceo.Event{}, fmt.Errorf("mpesa: normalize: %w", err)
+					}
 				}
 			}
 		}
@@ -117,15 +139,18 @@ func (p *Provider) ParseC2B(body []byte) (C2BPayload, error) {
 }
 
 func (p *Provider) NormalizeC2B(raw C2BPayload) (onceo.Event, error) {
-	var amount int64
-	fmt.Sscanf(raw.TransAmount, "%d", &amount)
+	f, err := strconv.ParseFloat(strings.TrimSpace(raw.TransAmount), 64)
+	if err != nil {
+		return onceo.Event{}, fmt.Errorf("mpesa: invalid c2b amount %q: %w", raw.TransAmount, err)
+	}
+	amount := int64(math.Round(f * 100))
 
 	event := onceo.Event{
 		Provider:        ProviderName,
 		ProviderEventID: raw.TransID,
 		Type:            "c2b.payment",
 		Status:          onceo.StatusSuccess,
-		AmountMinor:     amount * 100,
+		AmountMinor:     amount,
 		Currency:        "KES",
 		Reference:       raw.BillRefNumber,
 		ReceivedAt:      time.Now().UTC(),
@@ -134,19 +159,27 @@ func (p *Provider) NormalizeC2B(raw C2BPayload) (onceo.Event, error) {
 	return event, nil
 }
 
-func extractAmount(v interface{}) int64 {
+func parseMpesaAmount(v interface{}) (int64, error) {
 	switch val := v.(type) {
 	case float64:
-		return int64(val * 100)
+		return int64(math.Round(val * 100)), nil
 	case int:
-		return int64(val * 100)
+		return int64(val * 100), nil
 	case int64:
-		return val * 100
+		return val * 100, nil
 	case string:
-		amount, err := strconv.ParseFloat(val, 64)
-		if err == nil {
-			return int64(amount * 100)
+		f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+		if err != nil {
+			return 0, fmt.Errorf("unparseable amount string %q: %w", val, err)
 		}
+		return int64(math.Round(f * 100)), nil
+	case json.Number:
+		f, err := val.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("unparseable json.Number %q: %w", val, err)
+		}
+		return int64(math.Round(f * 100)), nil
+	default:
+		return 0, fmt.Errorf("unexpected amount type %T", v)
 	}
-	return 0
 }

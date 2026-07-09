@@ -36,7 +36,14 @@ type TransferData struct {
 }
 
 type Provider struct {
-	SecretHash string
+	secretHash string
+}
+
+func New(secretHash string) (*Provider, error) {
+	if len(secretHash) == 0 {
+		return nil, fmt.Errorf("flutterwave: secret hash must not be empty")
+	}
+	return &Provider{secretHash: secretHash}, nil
 }
 
 func (p *Provider) Name() string {
@@ -44,14 +51,11 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
-	if p.SecretHash == "" {
-		return onceo.ErrInvalidSignature
-	}
-	signature, err := onceo.ExtractHeader(headers, "Verif-Hash")
+	signature, err := onceo.SingleHeader(headers, "Verif-Hash")
 	if err != nil {
 		return err
 	}
-	return onceo.VerifyHMACSHA256([]byte(p.SecretHash), body, signature)
+	return onceo.VerifyHMACSHA256([]byte(p.secretHash), body, signature)
 }
 
 func (p *Provider) Parse(body []byte) (WebhookPayload, error) {

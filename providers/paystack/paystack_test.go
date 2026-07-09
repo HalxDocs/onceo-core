@@ -30,7 +30,10 @@ func TestVerifySignature(t *testing.T) {
 	secret := "sk_test_abc123"
 	body := loadFixture(t, "charge_success.json")
 
-	p := &Provider{SecretKey: secret}
+	p, err := New(secret)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 
 	tests := []struct {
 		name    string
@@ -74,8 +77,15 @@ func TestVerifySignature(t *testing.T) {
 	}
 }
 
+func TestNewEmptyKey(t *testing.T) {
+	_, err := New("")
+	if err == nil {
+		t.Error("expected error for empty secret key")
+	}
+}
+
 func TestParse(t *testing.T) {
-	p := &Provider{}
+	p, _ := New("sk_test_dummy")
 
 	tests := []struct {
 		name    string
@@ -134,7 +144,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestNormalizeChargeSuccess(t *testing.T) {
-	p := &Provider{}
+	p, _ := New("dummy_key")
 	body := loadFixture(t, "charge_success.json")
 
 	parsed, err := p.Parse(body)
@@ -171,7 +181,7 @@ func TestNormalizeChargeSuccess(t *testing.T) {
 }
 
 func TestNormalizeChargeFailed(t *testing.T) {
-	p := &Provider{}
+	p, _ := New("dummy_key")
 	body := loadFixture(t, "charge_failed.json")
 
 	parsed, err := p.Parse(body)
@@ -196,7 +206,7 @@ func TestNormalizeChargeFailed(t *testing.T) {
 }
 
 func TestNormalizeTransferSuccess(t *testing.T) {
-	p := &Provider{}
+	p, _ := New("dummy_key")
 	body := loadFixture(t, "transfer_success.json")
 
 	parsed, err := p.Parse(body)
@@ -224,7 +234,7 @@ func TestNormalizeTransferSuccess(t *testing.T) {
 }
 
 func TestNormalizeTransferFailed(t *testing.T) {
-	p := &Provider{}
+	p, _ := New("dummy_key")
 	body := loadFixture(t, "transfer_failed.json")
 
 	parsed, err := p.Parse(body)
@@ -255,7 +265,7 @@ func TestNormalizeUnknownEvent(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(raw)
-	p := &Provider{}
+	p, _ := New("dummy_key")
 	parsed, err := p.Parse(body)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
@@ -272,7 +282,10 @@ func TestProcessFullFlow(t *testing.T) {
 	body := loadFixture(t, "charge_success.json")
 	headers := signedHeaders(secret, body)
 
-	p := &Provider{SecretKey: secret}
+	p, err := New(secret)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 	store := onceo.NewMemoryStore()
 
 	event, err := onceo.Process(t.Context(), p, store, headers, body)
@@ -293,10 +306,13 @@ func TestProcessDuplicate(t *testing.T) {
 	body := loadFixture(t, "charge_success.json")
 	headers := signedHeaders(secret, body)
 
-	p := &Provider{SecretKey: secret}
+	p, err := New(secret)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 	store := onceo.NewMemoryStore()
 
-	_, err := onceo.Process(t.Context(), p, store, headers, body)
+	_, err = onceo.Process(t.Context(), p, store, headers, body)
 	if err != nil {
 		t.Fatalf("first Process failed: %v", err)
 	}
@@ -320,7 +336,7 @@ func FuzzParse(f *testing.F) {
 	f.Add([]byte(`not json`))
 	f.Add([]byte(`{"event":"charge.success","data":{"id":"abc"}}`))
 
-	p := &Provider{}
+	p, _ := New("dummy_key")
 
 	f.Fuzz(func(t *testing.T, body []byte) {
 		_, err := p.Parse(body)

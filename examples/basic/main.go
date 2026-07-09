@@ -23,7 +23,10 @@ func main() {
 	headers := http.Header{}
 	headers.Set("X-Paystack-Signature", testutil.SignHMACSHA512([]byte(secret), body))
 
-	provider := &paystack.Provider{SecretKey: secret}
+	provider, perr := paystack.New(secret)
+	if perr != nil {
+		log.Fatalf("paystack.New failed: %v", perr)
+	}
 	store := onceo.NewMemoryStore()
 
 	event, err := onceo.Process(context.Background(), provider, store, headers, body)

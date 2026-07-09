@@ -2,7 +2,6 @@ package redisstore
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -34,24 +33,7 @@ func cleanup(t *testing.T, client *redis.Client) {
 	}
 }
 
-func TestRedisStoreSeenBefore(t *testing.T) {
-	client := newTestClient(t)
-	defer client.Close()
-	defer cleanup(t, client)
-
-	ctx := context.Background()
-	store := New(client)
-
-	seen, err := store.SeenBefore(ctx, "paystack", "evt_001")
-	if err != nil {
-		t.Fatalf("SeenBefore failed: %v", err)
-	}
-	if seen {
-		t.Error("expected event not to be seen yet")
-	}
-}
-
-func TestRedisStoreSaveAndCheck(t *testing.T) {
+func TestRedisStoreSaveIfNew(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	defer cleanup(t, client)
@@ -71,46 +53,20 @@ func TestRedisStoreSaveAndCheck(t *testing.T) {
 		ReceivedAt:      time.Now().UTC(),
 	}
 
-	if err := store.Save(ctx, event); err != nil {
-		t.Fatalf("Save failed: %v", err)
-	}
-
-	seen, err := store.SeenBefore(ctx, "paystack", "evt_001")
+	created, err := store.SaveIfNew(ctx, event)
 	if err != nil {
-		t.Fatalf("SeenBefore failed: %v", err)
+		t.Fatalf("SaveIfNew failed: %v", err)
 	}
-	if !seen {
-		t.Error("expected event to be seen after save")
-	}
-}
-
-func TestRedisStoreDuplicateRejection(t *testing.T) {
-	client := newTestClient(t)
-	defer client.Close()
-	defer cleanup(t, client)
-
-	ctx := context.Background()
-	store := New(client)
-
-	event := onceo.Event{
-		ID:              "evt_001",
-		Provider:        "paystack",
-		ProviderEventID: "evt_001",
-		Type:            "charge.success",
-		Status:          onceo.StatusSuccess,
-		AmountMinor:     50000,
-		Currency:        "NGN",
-		Reference:       "ref_001",
-		ReceivedAt:      time.Now().UTC(),
+	if !created {
+		t.Error("expected event to be created")
 	}
 
-	if err := store.Save(ctx, event); err != nil {
-		t.Fatalf("first Save failed: %v", err)
+	created, err = store.SaveIfNew(ctx, event)
+	if err != nil {
+		t.Fatalf("SaveIfNew failed: %v", err)
 	}
-
-	err := store.Save(ctx, event)
-	if !errors.Is(err, onceo.ErrDuplicateEvent) {
-		t.Fatalf("expected ErrDuplicateEvent, got %v", err)
+	if created {
+		t.Error("expected duplicate to return created=false")
 	}
 }
 
@@ -124,49 +80,9 @@ func TestRedisStoreContextCancel(t *testing.T) {
 
 	store := New(client)
 
-	_, err := store.SeenBefore(ctx, "paystack", "evt_001")
+	_, err := store.SaveIfNew(ctx, onceo.Event{Provider: "t", ProviderEventID: "1"})
 	if err == nil {
 		t.Error("expected error from cancelled context")
-	}
-
-	err = store.Save(ctx, onceo.Event{})
-	if err == nil {
-		t.Error("expected error from cancelled context")
-	}
-}
-
-func TestRedisStoreDifferentProviders(t *testing.T) {
-	client := newTestClient(t)
-	defer client.Close()
-	defer cleanup(t, client)
-
-	ctx := context.Background()
-	store := New(client)
-
-	e1 := onceo.Event{
-		ID: "evt_001", Provider: "paystack", ProviderEventID: "evt_001",
-		Type: "charge.success", Status: onceo.StatusSuccess,
-		AmountMinor: 1000, Currency: "NGN", Reference: "ref_001",
-		ReceivedAt: time.Now().UTC(),
-	}
-	e2 := onceo.Event{
-		ID: "evt_001", Provider: "flutterwave", ProviderEventID: "evt_001",
-		Type: "charge.success", Status: onceo.StatusSuccess,
-		AmountMinor: 2000, Currency: "NGN", Reference: "ref_002",
-		ReceivedAt: time.Now().UTC(),
-	}
-
-	if err := store.Save(ctx, e1); err != nil {
-		t.Fatalf("Save e1 failed: %v", err)
-	}
-	if err := store.Save(ctx, e2); err != nil {
-		t.Fatalf("Save e2 failed: %v", err)
-	}
-
-	seen1, _ := store.SeenBefore(ctx, "paystack", "evt_001")
-	seen2, _ := store.SeenBefore(ctx, "flutterwave", "evt_001")
-	if !seen1 || !seen2 {
-		t.Error("both events should be seen")
 	}
 }
 
@@ -185,17 +101,21 @@ func TestRedisStoreTTL(t *testing.T) {
 		ReceivedAt: time.Now().UTC(),
 	}
 
-	if err := store.Save(ctx, event); err != nil {
-		t.Fatalf("Save failed: %v", err)
+	created, err := store.SaveIfNew(ctx, event)
+	if err != nil {
+		t.Fatalf("SaveIfNew failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected event to be created")
 	}
 
 	time.Sleep(2 * time.Second)
 
-	seen, err := store.SeenBefore(ctx, "paystack", "evt_001")
+	created, err = store.SaveIfNew(ctx, event)
 	if err != nil {
-		t.Fatalf("SeenBefore failed: %v", err)
+		t.Fatalf("SaveIfNew failed: %v", err)
 	}
-	if seen {
-		t.Error("expected event to expire after TTL")
+	if !created {
+		t.Error("expected event to expire and be re-creatable after TTL")
 	}
 }

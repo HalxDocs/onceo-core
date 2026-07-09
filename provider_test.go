@@ -65,12 +65,12 @@ func TestProcessSuccess(t *testing.T) {
 		t.Errorf("expected ProviderEventID evt_001, got %s", event.ProviderEventID)
 	}
 
-	seen, err := store.SeenBefore(ctx, "test", "evt_001")
+	created, err := store.SaveIfNew(ctx, event)
 	if err != nil {
-		t.Fatalf("SeenBefore failed: %v", err)
+		t.Fatalf("SaveIfNew failed: %v", err)
 	}
-	if !seen {
-		t.Error("expected event to be stored")
+	if created {
+		t.Error("expected event to already be stored")
 	}
 }
 

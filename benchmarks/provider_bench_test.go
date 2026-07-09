@@ -20,7 +20,7 @@ func BenchmarkPaystackVerify(b *testing.B) {
 	headers := http.Header{}
 	headers.Set("X-Paystack-Signature", testutil.SignHMACSHA512([]byte(secret), body))
 
-	p := &paystack.Provider{SecretKey: secret}
+	p, _ := paystack.New(secret)
 	store := onceo.NewMemoryStore()
 
 	b.ResetTimer()
@@ -35,7 +35,7 @@ func BenchmarkPaystackParse(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	p := &paystack.Provider{}
+	p, _ := paystack.New("sk_test_bench")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -49,7 +49,7 @@ func BenchmarkPaystackNormalize(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	p := &paystack.Provider{}
+	p, _ := paystack.New("sk_test_bench")
 	parsed, _ := p.Parse(body)
 
 	b.ResetTimer()

@@ -9,13 +9,22 @@ import (
 
 const DefaultMaxMemoryEvents = 100000
 
+// Store provides atomic idempotency — exactly-one delivery semantics
+// for webhook events. Implementations MUST make SaveIfNew atomic: no
+// caller-visible window where two concurrent calls for the same key can
+// both return created=true.
 type Store interface {
-	SeenBefore(ctx context.Context, provider, providerEventID string) (bool, error)
-	Save(ctx context.Context, e Event) error
+	SaveIfNew(ctx context.Context, e Event) (created bool, err error)
 }
 
+// MemoryStore is an in-memory Store, safe for concurrent use within a
+// single process. When the maximum number of events is reached, the
+// oldest entries are evicted (FIFO). MemoryStore is intended for tests
+// and local development. For production, use store/redis or another
+// durable Store implementation with a TTL matching your reconciliation
+// window.
 type MemoryStore struct {
-	mu        sync.RWMutex
+	mu        sync.Mutex
 	events    map[string]Event
 	order     []string
 	maxEvents int
@@ -42,24 +51,10 @@ func (s *MemoryStore) eventKey(provider, providerEventID string) string {
 	return fmt.Sprintf("%s:%s", provider, providerEventID)
 }
 
-func (s *MemoryStore) SeenBefore(ctx context.Context, provider, providerEventID string) (bool, error) {
+func (s *MemoryStore) SaveIfNew(ctx context.Context, e Event) (bool, error) {
 	select {
 	case <-ctx.Done():
 		return false, ctx.Err()
-	default:
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	_, ok := s.events[s.eventKey(provider, providerEventID)]
-	return ok, nil
-}
-
-func (s *MemoryStore) Save(ctx context.Context, e Event) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
 	default:
 	}
 
@@ -68,7 +63,7 @@ func (s *MemoryStore) Save(ctx context.Context, e Event) error {
 
 	key := s.eventKey(e.Provider, e.ProviderEventID)
 	if _, exists := s.events[key]; exists {
-		return ErrDuplicateEvent
+		return false, nil
 	}
 
 	if len(s.events) >= s.maxEvents {
@@ -80,5 +75,5 @@ func (s *MemoryStore) Save(ctx context.Context, e Event) error {
 	e.ProcessedAt = time.Now().UTC()
 	s.events[key] = e
 	s.order = append(s.order, key)
-	return nil
+	return true, nil
 }

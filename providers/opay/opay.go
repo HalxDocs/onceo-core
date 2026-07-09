@@ -3,8 +3,10 @@ package opay
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	onceo "github.com/HalxDocs/onceo-core"
@@ -27,8 +29,15 @@ type PaymentData struct {
 }
 
 type Provider struct {
-	MerchantID string
-	SecretKey  string
+	merchantID string
+	secretKey  string
+}
+
+func New(merchantID, secretKey string) (*Provider, error) {
+	if len(secretKey) == 0 {
+		return nil, fmt.Errorf("opay: secret key must not be empty")
+	}
+	return &Provider{merchantID: merchantID, secretKey: secretKey}, nil
 }
 
 func (p *Provider) Name() string {
@@ -36,17 +45,15 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
-	if p.SecretKey == "" {
-		return onceo.ErrInvalidSignature
-	}
-	signature, err := onceo.ExtractHeader(headers, "Authorization")
+	signature, err := onceo.SingleHeader(headers, "Authorization")
 	if err != nil {
-		signature, err = onceo.ExtractHeader(headers, "Opay-Signature")
-		if err != nil {
+		var e error
+		signature, e = onceo.SingleHeader(headers, "Opay-Signature")
+		if e != nil {
 			return err
 		}
 	}
-	return onceo.VerifyHMACSHA512([]byte(p.SecretKey), body, signature)
+	return onceo.VerifyHMACSHA512([]byte(p.secretKey), body, signature)
 }
 
 func (p *Provider) Parse(body []byte) (WebhookPayload, error) {
@@ -90,11 +97,23 @@ func normalizePayment(data json.RawMessage, e onceo.Event, status onceo.Status) 
 	e.Reference = d.Reference
 	e.Currency = d.Currency
 
-	amount, err := strconv.ParseInt(d.Amount, 10, 64)
+	amount, err := parseOpayAmount(d.Amount)
 	if err != nil {
-		return e, fmt.Errorf("%w: invalid amount: %s", onceo.ErrMalformedPayload, d.Amount)
+		return e, fmt.Errorf("opay: normalize: %w", err)
 	}
 	e.AmountMinor = amount
 
 	return e, nil
+}
+
+func parseOpayAmount(raw string) (int64, error) {
+	s := strings.TrimSpace(raw)
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid amount %q: %w", raw, err)
+	}
+	if f < 0 {
+		return 0, fmt.Errorf("negative amount %q", raw)
+	}
+	return int64(math.Round(f)), nil
 }

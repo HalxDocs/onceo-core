@@ -35,7 +35,10 @@ func TestVerifySignature(t *testing.T) {
 	secret := "opay_secret_key_123"
 	body := loadFixture(t, "payment_successful.json")
 
-	p := &Provider{SecretKey: secret}
+	p, err := New("merchant_001", secret)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 
 	tests := []struct {
 		name    string
@@ -74,7 +77,7 @@ func TestVerifySignature(t *testing.T) {
 }
 
 func TestParse(t *testing.T) {
-	p := &Provider{}
+	p, _ := New("merchant_001", "dummy_key")
 
 	tests := []struct {
 		name    string
@@ -121,7 +124,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestNormalizePaymentSuccessful(t *testing.T) {
-	p := &Provider{}
+	p, _ := New("merchant_001", "dummy_key")
 	body := loadFixture(t, "payment_successful.json")
 
 	parsed, err := p.Parse(body)
@@ -158,7 +161,7 @@ func TestNormalizePaymentSuccessful(t *testing.T) {
 }
 
 func TestNormalizePaymentFailed(t *testing.T) {
-	p := &Provider{}
+	p, _ := New("merchant_001", "dummy_key")
 	body := loadFixture(t, "payment_failed.json")
 
 	parsed, err := p.Parse(body)
@@ -189,7 +192,7 @@ func TestNormalizeUnknownEvent(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(raw)
-	p := &Provider{}
+	p, _ := New("merchant_001", "dummy_key")
 	parsed, err := p.Parse(body)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
@@ -202,7 +205,7 @@ func TestNormalizeUnknownEvent(t *testing.T) {
 }
 
 func TestProviderName(t *testing.T) {
-	p := &Provider{}
+	p, _ := New("merchant_001", "dummy_key")
 	if name := p.Name(); name != "opay" {
 		t.Errorf("Name() = %q, want %q", name, "opay")
 	}
@@ -218,7 +221,7 @@ func TestNormalizeInvalidAmount(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(raw)
-	p := &Provider{}
+	p, _ := New("merchant_001", "dummy_key")
 	parsed, err := p.Parse(body)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
@@ -230,9 +233,8 @@ func TestNormalizeInvalidAmount(t *testing.T) {
 	}
 }
 
-func TestVerifySignatureEmptyKey(t *testing.T) {
-	p := &Provider{SecretKey: ""}
-	err := p.VerifySignature(http.Header{}, []byte(`{}`))
+func TestNewEmptyKey(t *testing.T) {
+	_, err := New("merchant_001", "")
 	if err == nil {
 		t.Error("expected error for empty secret key")
 	}
@@ -243,7 +245,10 @@ func TestProcessFullFlow(t *testing.T) {
 	body := loadFixture(t, "payment_successful.json")
 	headers := signedHeaders(secret, body)
 
-	p := &Provider{SecretKey: secret}
+	p, err := New("merchant_001", secret)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 	store := onceo.NewMemoryStore()
 
 	event, err := onceo.Process(t.Context(), p, store, headers, body)

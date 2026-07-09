@@ -39,7 +39,14 @@ type TransferSuccessData struct {
 }
 
 type Provider struct {
-	SecretKey string
+	secretKey string
+}
+
+func New(secretKey string) (*Provider, error) {
+	if len(secretKey) == 0 {
+		return nil, fmt.Errorf("paystack: secret key must not be empty")
+	}
+	return &Provider{secretKey: secretKey}, nil
 }
 
 func (p *Provider) Name() string {
@@ -47,14 +54,11 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
-	if p.SecretKey == "" {
-		return onceo.ErrInvalidSignature
-	}
-	signature, err := onceo.ExtractHeader(headers, "X-Paystack-Signature")
+	signature, err := onceo.SingleHeader(headers, "X-Paystack-Signature")
 	if err != nil {
 		return err
 	}
-	return onceo.VerifyHMACSHA512([]byte(p.SecretKey), body, signature)
+	return onceo.VerifyHMACSHA512([]byte(p.secretKey), body, signature)
 }
 
 func (p *Provider) Parse(body []byte) (WebhookPayload, error) {

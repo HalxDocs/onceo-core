@@ -35,8 +35,9 @@ func handlePaystack(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	provider := &paystack.Provider{
-		SecretKey: "sk_test_abc123",
+	provider, err := paystack.New("sk_test_abc123")
+	if err != nil {
+		log.Fatalf("paystack.New: %v", err)
 	}
 
 	event, err := onceo.Process(r.Context(), provider, store, r.Header, body)

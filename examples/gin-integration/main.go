@@ -30,8 +30,11 @@ func handlePaystack(c *gin.Context) {
 	}
 	defer c.Request.Body.Close()
 
-	provider := &paystack.Provider{
-		SecretKey: "sk_test_abc123",
+	provider, err := paystack.New("sk_test_abc123")
+	if err != nil {
+		log.Printf("paystack.New: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "provider init failed"})
+		return
 	}
 
 	event, err := onceo.Process(c.Request.Context(), provider, store, c.Request.Header, body)

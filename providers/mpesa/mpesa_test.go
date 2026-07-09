@@ -9,6 +9,8 @@ import (
 	onceo "github.com/HalxDocs/onceo-core"
 )
 
+const testToken = "abcdef1234567890abcdef1234567890abcdef12"
+
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile("testdata/" + name)
@@ -19,27 +21,38 @@ func loadFixture(t *testing.T, name string) []byte {
 }
 
 func TestVerifySignature(t *testing.T) {
+	token := "abcdef1234567890abcdef1234567890abcdef12"
+
+	p, err := New(token)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
 	tests := []struct {
-		name              string
-		insecureSkipVerify bool
-		wantErr           bool
+		name    string
+		headers http.Header
+		wantErr bool
 	}{
 		{
-			name:              "insecure skip verify",
-			insecureSkipVerify: true,
-			wantErr:           false,
+			name:    "valid token",
+			headers: withCallbackToken(token),
+			wantErr: false,
 		},
 		{
-			name:              "default no verification",
-			insecureSkipVerify: false,
-			wantErr:           true,
+			name:    "missing token header",
+			headers: http.Header{},
+			wantErr: true,
+		},
+		{
+			name:    "wrong token",
+			headers: withCallbackToken("wrong_token_value_that_is_long_enough_32"),
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Provider{InsecureSkipVerify: tt.insecureSkipVerify}
-			err := p.VerifySignature(http.Header{}, nil)
+			err := p.VerifySignature(tt.headers, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("VerifySignature() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -47,8 +60,21 @@ func TestVerifySignature(t *testing.T) {
 	}
 }
 
+func withCallbackToken(token string) http.Header {
+	h := http.Header{}
+	h.Set("X-Onceo-Mpesa-Callback-Token", token)
+	return h
+}
+
+func TestNewShortToken(t *testing.T) {
+	_, err := New("short")
+	if err == nil {
+		t.Error("expected error for short callback token")
+	}
+}
+
 func TestParseSTK(t *testing.T) {
-	p := &Provider{}
+	p, _ := New(testToken)
 
 	tests := []struct {
 		name    string
@@ -95,7 +121,7 @@ func TestParseSTK(t *testing.T) {
 }
 
 func TestNormalizeSTKSuccess(t *testing.T) {
-	p := &Provider{}
+	p, _ := New(testToken)
 	body := loadFixture(t, "stk_success.json")
 
 	parsed, err := p.Parse(body)
@@ -126,7 +152,7 @@ func TestNormalizeSTKSuccess(t *testing.T) {
 }
 
 func TestNormalizeSTKFailed(t *testing.T) {
-	p := &Provider{}
+	p, _ := New(testToken)
 	body := loadFixture(t, "stk_failed.json")
 
 	parsed, err := p.Parse(body)
@@ -148,39 +174,45 @@ func TestNormalizeSTKFailed(t *testing.T) {
 }
 
 func TestProviderName(t *testing.T) {
-	p := &Provider{}
+	p, _ := New(testToken)
 	if got := p.Name(); got != "mpesa" {
 		t.Errorf("Name() = %q, want %q", got, "mpesa")
 	}
 }
 
-func TestExtractAmount(t *testing.T) {
+func TestParseMpesaAmount(t *testing.T) {
 	tests := []struct {
-		name  string
-		input interface{}
-		want  int64
+		name    string
+		input   interface{}
+		want    int64
+		wantErr bool
 	}{
-		{"float64", float64(1500.0), 150000},
-		{"int", 1500, 150000},
-		{"int64", int64(1500), 150000},
-		{"string", "1500", 150000},
-		{"string decimal", "12.50", 1250},
-		{"nil", nil, 0},
-		{"invalid string", "abc", 0},
-		{"bool", true, 0},
+		{"float64", float64(1500.0), 150000, false},
+		{"int", 1500, 150000, false},
+		{"int64", int64(1500), 150000, false},
+		{"string", "1500", 150000, false},
+		{"string decimal", "12.50", 1250, false},
+		{"nil", nil, 0, true},
+		{"invalid string", "abc", 0, true},
+		{"bool", true, 0, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := extractAmount(tt.input); got != tt.want {
-				t.Errorf("extractAmount(%v) = %d, want %d", tt.input, got, tt.want)
+			got, err := parseMpesaAmount(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseMpesaAmount(%v) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("parseMpesaAmount(%v) = %d, want %d", tt.input, got, tt.want)
 			}
 		})
 	}
 }
 
 func TestParseC2B(t *testing.T) {
-	p := &Provider{}
+	p, _ := New(testToken)
 	body := loadFixture(t, "c2b_payment.json")
 
 	payload, err := p.ParseC2B(body)
@@ -200,7 +232,7 @@ func TestParseC2B(t *testing.T) {
 }
 
 func TestParseC2BMalformed(t *testing.T) {
-	p := &Provider{}
+	p, _ := New(testToken)
 	_, err := p.ParseC2B([]byte(`not json`))
 	if err == nil {
 		t.Fatal("expected error for malformed JSON")
@@ -208,7 +240,7 @@ func TestParseC2BMalformed(t *testing.T) {
 }
 
 func TestNormalizeC2B(t *testing.T) {
-	p := &Provider{}
+	p, _ := New(testToken)
 	body := loadFixture(t, "c2b_payment.json")
 
 	parsed, err := p.ParseC2B(body)
@@ -247,10 +279,16 @@ func TestNormalizeC2B(t *testing.T) {
 func TestProcessFullFlow(t *testing.T) {
 	body := loadFixture(t, "stk_success.json")
 
-	p := &Provider{InsecureSkipVerify: true}
+	p, err := New(testToken)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 	store := onceo.NewMemoryStore()
 
-	event, err := onceo.Process(t.Context(), p, store, http.Header{}, body)
+	headers := http.Header{}
+	headers.Set("X-Onceo-Mpesa-Callback-Token", testToken)
+
+	event, err := onceo.Process(t.Context(), p, store, headers, body)
 	if err != nil {
 		t.Fatalf("Process failed: %v", err)
 	}
@@ -267,7 +305,7 @@ func TestProcessFullFlow(t *testing.T) {
 }
 
 func TestNormalizeSTKResultCode1032(t *testing.T) {
-	p := &Provider{}
+	p, _ := New(testToken)
 	payload := struct {
 		Body struct {
 			StkCallback struct {
@@ -298,7 +336,7 @@ func TestNormalizeSTKResultCode1032(t *testing.T) {
 }
 
 func TestNormalizeSTKDefaultResultCode(t *testing.T) {
-	p := &Provider{}
+	p, _ := New(testToken)
 	payload := struct {
 		Body struct {
 			StkCallback struct {
@@ -338,7 +376,7 @@ func FuzzParse(f *testing.F) {
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`not json`))
 
-	p := &Provider{}
+	p, _ := New(testToken)
 
 	f.Fuzz(func(t *testing.T, body []byte) {
 		_, err := p.Parse(body)

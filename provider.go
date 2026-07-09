@@ -42,8 +42,12 @@ func Process[T any](ctx context.Context, p Provider[T], store Store, headers htt
 	event.ID = generateID()
 	event.RawPayload = body
 
-	if err := store.Save(ctx, event); err != nil {
+	created, err := store.SaveIfNew(ctx, event)
+	if err != nil {
 		return Event{}, WrapProviderError(p.Name(), err)
+	}
+	if !created {
+		return Event{}, WrapProviderError(p.Name(), ErrDuplicateEvent)
 	}
 
 	return event, nil

@@ -7,17 +7,9 @@ import (
 	"time"
 )
 
-func TestMemoryStoreSeenBefore(t *testing.T) {
+func TestMemoryStoreSaveIfNew(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()
-
-	seen, err := store.SeenBefore(ctx, "paystack", "evt_001")
-	if err != nil {
-		t.Fatalf("SeenBefore failed: %v", err)
-	}
-	if seen {
-		t.Error("expected event not to be seen yet")
-	}
 
 	event := Event{
 		ID:              "evt_001",
@@ -31,16 +23,20 @@ func TestMemoryStoreSeenBefore(t *testing.T) {
 		ReceivedAt:      time.Now().UTC(),
 	}
 
-	if err := store.Save(ctx, event); err != nil {
-		t.Fatalf("Save failed: %v", err)
+	created, err := store.SaveIfNew(ctx, event)
+	if err != nil {
+		t.Fatalf("SaveIfNew failed: %v", err)
+	}
+	if !created {
+		t.Error("expected event to be created")
 	}
 
-	seen, err = store.SeenBefore(ctx, "paystack", "evt_001")
+	created, err = store.SaveIfNew(ctx, event)
 	if err != nil {
-		t.Fatalf("SeenBefore failed: %v", err)
+		t.Fatalf("SaveIfNew failed: %v", err)
 	}
-	if !seen {
-		t.Error("expected event to be seen after save")
+	if created {
+		t.Error("expected event NOT to be created on duplicate")
 	}
 }
 
@@ -60,12 +56,20 @@ func TestMemoryStoreDuplicateRejection(t *testing.T) {
 		ReceivedAt:      time.Now().UTC(),
 	}
 
-	if err := store.Save(ctx, event); err != nil {
-		t.Fatalf("first Save failed: %v", err)
+	created, err := store.SaveIfNew(ctx, event)
+	if err != nil {
+		t.Fatalf("first SaveIfNew failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected first to be created")
 	}
 
-	if err := store.Save(ctx, event); err != ErrDuplicateEvent {
-		t.Fatalf("expected ErrDuplicateEvent, got %v", err)
+	created, err = store.SaveIfNew(ctx, event)
+	if err != nil {
+		t.Fatalf("second SaveIfNew failed: %v", err)
+	}
+	if created {
+		t.Fatal("expected duplicate to return created=false")
 	}
 }
 
@@ -89,7 +93,7 @@ func TestMemoryStoreConcurrent(t *testing.T) {
 				Reference:       "ref_001",
 				ReceivedAt:      time.Now().UTC(),
 			}
-			_ = store.Save(ctx, event)
+			_, _ = store.SaveIfNew(ctx, event)
 		}(i)
 	}
 	wg.Wait()
@@ -106,12 +110,7 @@ func TestMemoryStoreContextCancel(t *testing.T) {
 
 	store := NewMemoryStore()
 
-	_, err := store.SeenBefore(ctx, "paystack", "evt_001")
-	if err == nil {
-		t.Error("expected error from cancelled context")
-	}
-
-	err = store.Save(ctx, Event{})
+	_, err := store.SaveIfNew(ctx, Event{Provider: "t", ProviderEventID: "1"})
 	if err == nil {
 		t.Error("expected error from cancelled context")
 	}
@@ -125,23 +124,30 @@ func TestMemoryStoreWithMax(t *testing.T) {
 	e2 := Event{ID: "2", Provider: "p", ProviderEventID: "2", ReceivedAt: time.Now().UTC()}
 	e3 := Event{ID: "3", Provider: "p", ProviderEventID: "3", ReceivedAt: time.Now().UTC()}
 
-	if err := store.Save(ctx, e1); err != nil {
-		t.Fatalf("Save e1 failed: %v", err)
+	if _, err := store.SaveIfNew(ctx, e1); err != nil {
+		t.Fatalf("SaveIfNew e1 failed: %v", err)
 	}
-	if err := store.Save(ctx, e2); err != nil {
-		t.Fatalf("Save e2 failed: %v", err)
+	if _, err := store.SaveIfNew(ctx, e2); err != nil {
+		t.Fatalf("SaveIfNew e2 failed: %v", err)
 	}
-	if err := store.Save(ctx, e3); err != nil {
-		t.Fatalf("Save e3 failed: %v", err)
+	if _, err := store.SaveIfNew(ctx, e3); err != nil {
+		t.Fatalf("SaveIfNew e3 failed: %v", err)
 	}
 
-	seen1, _ := store.SeenBefore(ctx, "p", "1")
-	if seen1 {
-		t.Error("e1 should have been evicted")
+	created, err := store.SaveIfNew(ctx, e1)
+	if err != nil {
+		t.Fatalf("SaveIfNew e1 check failed: %v", err)
 	}
-	seen3, _ := store.SeenBefore(ctx, "p", "3")
-	if !seen3 {
-		t.Error("e3 should be present")
+	if !created {
+		t.Error("e1 should have been evicted and re-created")
+	}
+
+	created, err = store.SaveIfNew(ctx, e3)
+	if err != nil {
+		t.Fatalf("SaveIfNew e3 check failed: %v", err)
+	}
+	if created {
+		t.Error("e3 should already be present")
 	}
 }
 
@@ -169,16 +175,19 @@ func TestMemoryStoreDifferentProviders(t *testing.T) {
 		ReceivedAt: time.Now().UTC(),
 	}
 
-	if err := store.Save(ctx, e1); err != nil {
-		t.Fatalf("Save e1 failed: %v", err)
+	created1, err := store.SaveIfNew(ctx, e1)
+	if err != nil {
+		t.Fatalf("SaveIfNew e1 failed: %v", err)
 	}
-	if err := store.Save(ctx, e2); err != nil {
-		t.Fatalf("Save e2 failed: %v", err)
+	if !created1 {
+		t.Error("expected e1 to be created")
 	}
 
-	seen1, _ := store.SeenBefore(ctx, "paystack", "evt_001")
-	seen2, _ := store.SeenBefore(ctx, "flutterwave", "evt_001")
-	if !seen1 || !seen2 {
-		t.Error("both events should be seen")
+	created2, err := store.SaveIfNew(ctx, e2)
+	if err != nil {
+		t.Fatalf("SaveIfNew e2 failed: %v", err)
+	}
+	if !created2 {
+		t.Error("expected e2 to be created")
 	}
 }
