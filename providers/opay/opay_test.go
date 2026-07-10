@@ -35,7 +35,7 @@ func TestVerifySignatureWithOpaySignature(t *testing.T) {
 	secret := "opay_secret_key_123"
 	body := loadFixture(t, "payment_successful.json")
 
-	p, err := New("merchant_001", secret)
+	p, err := New(secret)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestVerifySignatureDuplicateAuthorization(t *testing.T) {
 	secret := "opay_secret_key_123"
 	body := loadFixture(t, "payment_successful.json")
 
-	p, err := New("merchant_001", secret)
+	p, err := New(secret)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestVerifySignature(t *testing.T) {
 	secret := "opay_secret_key_123"
 	body := loadFixture(t, "payment_successful.json")
 
-	p, err := New("merchant_001", secret)
+	p, err := New(secret)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestVerifySignature(t *testing.T) {
 }
 
 func TestParse(t *testing.T) {
-	p, _ := New("merchant_001", "dummy_key")
+	p, _ := New( "dummy_key")
 
 	tests := []struct {
 		name    string
@@ -165,7 +165,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestNormalizePaymentSuccessful(t *testing.T) {
-	p, _ := New("merchant_001", "dummy_key")
+	p, _ := New( "dummy_key")
 	body := loadFixture(t, "payment_successful.json")
 
 	parsed, err := p.Parse(body)
@@ -201,8 +201,35 @@ func TestNormalizePaymentSuccessful(t *testing.T) {
 	}
 }
 
+func TestNormalizeRefundSuccessful(t *testing.T) {
+	p, _ := New("dummy_key")
+	body, _ := json.Marshal(struct {
+		EventType string          `json:"eventType"`
+		Data      json.RawMessage `json:"data"`
+	}{
+		EventType: "REFUND_SUCCESSFUL",
+		Data:      json.RawMessage(`{"reference":"r","amount":"50.00","currency":"NGN","status":"SUCCESS","orderNo":"o_refund"}`),
+	})
+
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	if event.Status != onceo.StatusReversed {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusReversed)
+	}
+	if event.AmountMinor != 5000 {
+		t.Errorf("AmountMinor = %d, want %d", event.AmountMinor, 5000)
+	}
+}
+
 func TestNormalizePaymentFailed(t *testing.T) {
-	p, _ := New("merchant_001", "dummy_key")
+	p, _ := New( "dummy_key")
 	body := loadFixture(t, "payment_failed.json")
 
 	parsed, err := p.Parse(body)
@@ -233,7 +260,7 @@ func TestNormalizeUnknownEvent(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(raw)
-	p, _ := New("merchant_001", "dummy_key")
+	p, _ := New( "dummy_key")
 	parsed, err := p.Parse(body)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
@@ -246,9 +273,53 @@ func TestNormalizeUnknownEvent(t *testing.T) {
 }
 
 func TestProviderName(t *testing.T) {
-	p, _ := New("merchant_001", "dummy_key")
+	p, _ := New( "dummy_key")
 	if name := p.Name(); name != "opay" {
 		t.Errorf("Name() = %q, want %q", name, "opay")
+	}
+}
+
+func TestNormalizeInvalidCurrency(t *testing.T) {
+	raw := struct {
+		EventType string          `json:"eventType"`
+		Data      json.RawMessage `json:"data"`
+	}{
+		EventType: "PAYMENT_SUCCESSFUL",
+		Data:      json.RawMessage(`{"reference":"r","amount":"100.00","currency":"XYZ","status":"SUCCESS","orderNo":"o123"}`),
+	}
+
+	body, _ := json.Marshal(raw)
+	p, _ := New("dummy_key")
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	_, err = p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for invalid currency")
+	}
+}
+
+func TestNormalizeEmptyOrderNo(t *testing.T) {
+	raw := struct {
+		EventType string          `json:"eventType"`
+		Data      json.RawMessage `json:"data"`
+	}{
+		EventType: "PAYMENT_SUCCESSFUL",
+		Data:      json.RawMessage(`{"reference":"r","amount":"100.00","currency":"NGN","status":"SUCCESS","orderNo":""}`),
+	}
+
+	body, _ := json.Marshal(raw)
+	p, _ := New("dummy_key")
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	_, err = p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for empty orderNo")
 	}
 }
 
@@ -262,7 +333,7 @@ func TestNormalizeInvalidAmount(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(raw)
-	p, _ := New("merchant_001", "dummy_key")
+	p, _ := New( "dummy_key")
 	parsed, err := p.Parse(body)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
@@ -274,8 +345,15 @@ func TestNormalizeInvalidAmount(t *testing.T) {
 	}
 }
 
+func TestParseOpayNegativeAmount(t *testing.T) {
+	_, err := parseOpayAmount("-100.00")
+	if err == nil {
+		t.Fatal("expected error for negative amount")
+	}
+}
+
 func TestNewEmptyKey(t *testing.T) {
-	_, err := New("merchant_001", "")
+	_, err := New("")
 	if err == nil {
 		t.Error("expected error for empty secret key")
 	}
@@ -286,7 +364,7 @@ func TestProcessFullFlow(t *testing.T) {
 	body := loadFixture(t, "payment_successful.json")
 	headers := signedHeaders(secret, body)
 
-	p, err := New("merchant_001", secret)
+	p, err := New(secret)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}

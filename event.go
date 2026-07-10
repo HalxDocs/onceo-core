@@ -3,6 +3,7 @@ package onceo
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -45,7 +46,7 @@ func (s *Status) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &str); err != nil {
 		return fmt.Errorf("status: expected string, got %s", string(data))
 	}
-	v, ok := statusValues[str]
+	v, ok := statusValues[strings.ToLower(str)]
 	if !ok {
 		return fmt.Errorf("unknown status: %s", str)
 	}

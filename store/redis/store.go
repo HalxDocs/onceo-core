@@ -43,6 +43,7 @@ func (s *Store) SaveIfNew(ctx context.Context, e onceo.Event) (bool, error) {
 		return false, fmt.Errorf("%w: provider and provider event id must not be empty", onceo.ErrStoreFailed)
 	}
 
+	e.ProcessedAt = time.Now().UTC()
 	data, err := json.Marshal(e)
 	if err != nil {
 		return false, fmt.Errorf("%w: marshal event: %w", onceo.ErrStoreFailed, err)

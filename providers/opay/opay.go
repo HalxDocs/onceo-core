@@ -30,15 +30,14 @@ type PaymentData struct {
 }
 
 type Provider struct {
-	merchantID string
-	secretKey  string
+	secretKey string
 }
 
-func New(merchantID, secretKey string) (*Provider, error) {
+func New(secretKey string) (*Provider, error) {
 	if len(secretKey) == 0 {
 		return nil, fmt.Errorf("opay: secret key must not be empty")
 	}
-	return &Provider{merchantID: merchantID, secretKey: secretKey}, nil
+	return &Provider{secretKey: secretKey}, nil
 }
 
 func (p *Provider) Name() string {
@@ -90,16 +89,38 @@ func (p *Provider) Normalize(raw WebhookPayload) (onceo.Event, error) {
 	}
 }
 
+var validCurrencies = map[string]bool{
+	"NGN": true, "USD": true, "GBP": true, "EUR": true, "ZAR": true,
+	"GHS": true, "KES": true, "UGX": true, "TZS": true, "RWF": true,
+	"XAF": true, "XOF": true, "ZMW": true, "MZN": true, "AOA": true,
+	"BWP": true, "MAD": true, "EGP": true, "GNF": true, "ZWL": true,
+}
+
+func sanitiseCurrency(raw string) (string, error) {
+	c := strings.ToUpper(strings.TrimSpace(raw))
+	if !validCurrencies[c] {
+		return "", fmt.Errorf("opay: invalid or unsupported currency code %q", raw)
+	}
+	return c, nil
+}
+
 func normalizePayment(data json.RawMessage, e onceo.Event, status onceo.Status) (onceo.Event, error) {
 	var d PaymentData
 	if err := json.Unmarshal(data, &d); err != nil {
 		return e, onceo.ErrMalformedPayload
 	}
 
+	if d.OrderNo == "" {
+		return e, fmt.Errorf("%w: payment event missing orderNo", onceo.ErrEventParseFailed)
+	}
 	e.ProviderEventID = d.OrderNo
 	e.Status = status
 	e.Reference = d.Reference
-	e.Currency = d.Currency
+	cur, err := sanitiseCurrency(d.Currency)
+	if err != nil {
+		return e, err
+	}
+	e.Currency = cur
 
 	amount, err := parseOpayAmount(d.Amount)
 	if err != nil {

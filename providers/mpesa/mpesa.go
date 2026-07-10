@@ -3,7 +3,6 @@ package mpesa
 import (
 	"crypto/subtle"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -13,8 +12,6 @@ import (
 
 	onceo "github.com/HalxDocs/onceo-core"
 )
-
-var ErrMpesaNoSignature = errors.New("mpesa: no cryptographic signature scheme; use callback URL path token verification instead")
 
 const ProviderName = "mpesa"
 

@@ -1,6 +1,9 @@
 package flutterwave
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -56,7 +59,12 @@ func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
 	if err != nil {
 		return err
 	}
-	return onceo.VerifyHMACSHA256([]byte(p.secretHash), body, signature)
+	h := sha256.Sum256([]byte(p.secretHash))
+	expected := hex.EncodeToString(h[:])
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) != 1 {
+		return onceo.ErrInvalidSignature
+	}
+	return nil
 }
 
 func (p *Provider) Parse(body []byte) (WebhookPayload, error) {
