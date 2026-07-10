@@ -64,6 +64,10 @@ func (s *MemoryStore) SaveIfNew(ctx context.Context, e Event) (bool, error) {
 	default:
 	}
 
+	if e.Provider == "" || e.ProviderEventID == "" {
+		return false, fmt.Errorf("%w: provider and provider event id must not be empty", ErrStoreFailed)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

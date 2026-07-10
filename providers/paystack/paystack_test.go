@@ -299,6 +299,54 @@ func TestNormalizeInvalidCurrency(t *testing.T) {
 	}
 }
 
+func TestNormalizeChargeSuccessMissingID(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "charge.success",
+		"data":  map[string]any{"status": "success", "reference": "r", "amount": 1000, "currency": "NGN"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+}
+
+func TestNormalizeChargeFailedMissingID(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "charge.failed",
+		"data":  map[string]any{"status": "failed", "reference": "r", "amount": 1000, "currency": "NGN"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+}
+
+func TestNormalizeTransferSuccessMissingID(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "transfer.success",
+		"data":  map[string]any{"status": "success", "reference": "r", "amount": 1000, "currency": "NGN"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+}
+
+func TestNormalizeTransferFailedMissingID(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "transfer.failed",
+		"data":  map[string]any{"status": "failed", "reference": "r", "amount": 1000, "currency": "NGN"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+}
+
 func TestNormalizeChargeSuccessReversed(t *testing.T) {
 	p, _ := New("dummy_key")
 	parsed, _ := p.Parse(mustJSON(t, map[string]any{

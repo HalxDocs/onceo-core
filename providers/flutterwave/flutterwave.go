@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	onceo "github.com/HalxDocs/onceo-core"
@@ -90,16 +91,38 @@ func (p *Provider) Normalize(raw WebhookPayload) (onceo.Event, error) {
 	}
 }
 
+var validCurrencies = map[string]bool{
+	"NGN": true, "USD": true, "GBP": true, "EUR": true, "ZAR": true,
+	"GHS": true, "KES": true, "UGX": true, "TZS": true, "RWF": true,
+	"XAF": true, "XOF": true, "ZMW": true, "MZN": true, "AOA": true,
+	"BWP": true, "MAD": true, "EGP": true, "GNF": true, "ZWL": true,
+}
+
+func sanitiseCurrency(raw string) (string, error) {
+	c := strings.ToUpper(strings.TrimSpace(raw))
+	if !validCurrencies[c] {
+		return "", fmt.Errorf("flutterwave: invalid or unsupported currency code %q", raw)
+	}
+	return c, nil
+}
+
 func normalizeCharge(data json.RawMessage, e onceo.Event, status onceo.Status) (onceo.Event, error) {
 	var d ChargeData
 	if err := json.Unmarshal(data, &d); err != nil {
 		return e, onceo.ErrMalformedPayload
 	}
 
+	if d.ID == 0 {
+		return e, fmt.Errorf("%w: charge event missing id", onceo.ErrEventParseFailed)
+	}
 	e.ProviderEventID = fmt.Sprintf("%d", d.ID)
 	e.Status = mapStatus(d.Status, status)
 	e.AmountMinor = int64(d.Amount)
-	e.Currency = d.Currency
+	cur, err := sanitiseCurrency(d.Currency)
+	if err != nil {
+		return e, err
+	}
+	e.Currency = cur
 	e.Reference = d.TxRef
 
 	return e, nil
@@ -111,10 +134,17 @@ func normalizeTransfer(data json.RawMessage, e onceo.Event, status onceo.Status)
 		return e, onceo.ErrMalformedPayload
 	}
 
+	if d.ID == 0 {
+		return e, fmt.Errorf("%w: transfer event missing id", onceo.ErrEventParseFailed)
+	}
 	e.ProviderEventID = fmt.Sprintf("%d", d.ID)
 	e.Status = mapStatus(d.Status, status)
 	e.AmountMinor = int64(d.Amount)
-	e.Currency = d.Currency
+	cur, err := sanitiseCurrency(d.Currency)
+	if err != nil {
+		return e, err
+	}
+	e.Currency = cur
 	e.Reference = d.Ref
 
 	return e, nil

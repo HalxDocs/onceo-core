@@ -2,6 +2,7 @@ package opay
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -46,13 +47,15 @@ func (p *Provider) Name() string {
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
 	sig, err := onceo.SingleHeader(headers, "Authorization")
-	if err != nil {
+	if errors.Is(err, onceo.ErrMissingHeader) {
 		var sig2 string
 		sig2, err2 := onceo.SingleHeader(headers, "Opay-Signature")
 		if err2 != nil {
 			return fmt.Errorf("opay: neither Authorization nor Opay-Signature present (%v, %v)", err, err2)
 		}
 		sig = sig2
+	} else if err != nil {
+		return err
 	}
 	return onceo.VerifyHMACSHA512([]byte(p.secretKey), body, sig)
 }

@@ -35,10 +35,14 @@ func NewWithTTL(client *redis.Client, ttl time.Duration) *Store {
 }
 
 func key(provider, providerEventID string) string {
-	return prefix + fmt.Sprintf("%s:%s", provider, providerEventID)
+	return prefix + provider + ":" + providerEventID
 }
 
 func (s *Store) SaveIfNew(ctx context.Context, e onceo.Event) (bool, error) {
+	if e.Provider == "" || e.ProviderEventID == "" {
+		return false, fmt.Errorf("%w: provider and provider event id must not be empty", onceo.ErrStoreFailed)
+	}
+
 	data, err := json.Marshal(e)
 	if err != nil {
 		return false, fmt.Errorf("%w: marshal event: %w", onceo.ErrStoreFailed, err)

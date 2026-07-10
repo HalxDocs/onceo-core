@@ -31,6 +31,47 @@ func signedHeaders(secret string, body []byte) http.Header {
 	return headers
 }
 
+func TestVerifySignatureWithOpaySignature(t *testing.T) {
+	secret := "opay_secret_key_123"
+	body := loadFixture(t, "payment_successful.json")
+
+	p, err := New("merchant_001", secret)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	mac := hmac.New(sha512.New, []byte(secret))
+	mac.Write(body)
+	sig := hex.EncodeToString(mac.Sum(nil))
+
+	headers := http.Header{}
+	headers.Set("Opay-Signature", sig)
+
+	err = p.VerifySignature(headers, body)
+	if err != nil {
+		t.Fatalf("VerifySignature failed with Opay-Signature: %v", err)
+	}
+}
+
+func TestVerifySignatureDuplicateAuthorization(t *testing.T) {
+	secret := "opay_secret_key_123"
+	body := loadFixture(t, "payment_successful.json")
+
+	p, err := New("merchant_001", secret)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	headers := http.Header{}
+	headers.Add("Authorization", "sig1")
+	headers.Add("Authorization", "sig2")
+
+	err = p.VerifySignature(headers, body)
+	if err == nil {
+		t.Fatal("expected error for duplicate Authorization headers")
+	}
+}
+
 func TestVerifySignature(t *testing.T) {
 	secret := "opay_secret_key_123"
 	body := loadFixture(t, "payment_successful.json")

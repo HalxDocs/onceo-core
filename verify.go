@@ -47,6 +47,8 @@ func ExtractHeader(headers http.Header, key string) (string, error) {
 	if v == "" {
 		return "", ErrMissingHeader
 	}
+	// Silently return the first value when duplicates exist (caller
+	// should use SingleHeader if duplicates must be rejected).
 	return v, nil
 }
 

@@ -1,6 +1,7 @@
 package onceo
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -14,34 +15,50 @@ const (
 	StatusReversed
 )
 
+var statusStrings = map[Status]string{
+	StatusPending: "pending",
+	StatusSuccess: "success",
+	StatusFailed:  "failed",
+	StatusReversed: "reversed",
+}
+
+var statusValues = map[string]Status{
+	"pending":  StatusPending,
+	"success":  StatusSuccess,
+	"failed":   StatusFailed,
+	"reversed": StatusReversed,
+}
+
 func (s Status) String() string {
-	switch s {
-	case StatusPending:
-		return "pending"
-	case StatusSuccess:
-		return "success"
-	case StatusFailed:
-		return "failed"
-	case StatusReversed:
-		return "reversed"
-	default:
-		return "unknown"
+	if v, ok := statusStrings[s]; ok {
+		return v
 	}
+	return "unknown"
+}
+
+func (s Status) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
+}
+
+func (s *Status) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return fmt.Errorf("status: expected string, got %s", string(data))
+	}
+	v, ok := statusValues[str]
+	if !ok {
+		return fmt.Errorf("unknown status: %s", str)
+	}
+	*s = v
+	return nil
 }
 
 func StatusFromString(s string) (Status, error) {
-	switch s {
-	case "pending":
-		return StatusPending, nil
-	case "success":
-		return StatusSuccess, nil
-	case "failed":
-		return StatusFailed, nil
-	case "reversed":
-		return StatusReversed, nil
-	default:
+	v, ok := statusValues[s]
+	if !ok {
 		return StatusPending, fmt.Errorf("unknown status: %s", s)
 	}
+	return v, nil
 }
 
 type Event struct {

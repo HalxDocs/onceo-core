@@ -100,6 +100,9 @@ func normalizeChargeSuccess(data json.RawMessage, e onceo.Event) (onceo.Event, e
 		return e, onceo.ErrMalformedPayload
 	}
 
+	if d.ID == 0 {
+		return e, fmt.Errorf("%w: charge success event missing id", onceo.ErrEventParseFailed)
+	}
 	e.ProviderEventID = strconv.Itoa(d.ID)
 	e.Status = mapStatus(d.Status)
 	e.AmountMinor = int64(d.Amount)
@@ -119,6 +122,9 @@ func normalizeChargeFailed(data json.RawMessage, e onceo.Event) (onceo.Event, er
 		return e, onceo.ErrMalformedPayload
 	}
 
+	if d.ID == 0 {
+		return e, fmt.Errorf("%w: charge failed event missing id", onceo.ErrEventParseFailed)
+	}
 	e.ProviderEventID = strconv.Itoa(d.ID)
 	e.Status = onceo.StatusFailed
 	e.AmountMinor = int64(d.Amount)
@@ -138,6 +144,9 @@ func normalizeTransferSuccess(data json.RawMessage, e onceo.Event) (onceo.Event,
 		return e, onceo.ErrMalformedPayload
 	}
 
+	if d.ID == 0 {
+		return e, fmt.Errorf("%w: transfer success event missing id", onceo.ErrEventParseFailed)
+	}
 	e.ProviderEventID = strconv.Itoa(d.ID)
 	e.Status = mapStatus(d.Status)
 	e.AmountMinor = int64(d.Amount)
@@ -157,6 +166,9 @@ func normalizeTransferFailed(data json.RawMessage, e onceo.Event) (onceo.Event, 
 		return e, onceo.ErrMalformedPayload
 	}
 
+	if d.ID == 0 {
+		return e, fmt.Errorf("%w: transfer failed event missing id", onceo.ErrEventParseFailed)
+	}
 	e.ProviderEventID = strconv.Itoa(d.ID)
 	e.Status = onceo.StatusFailed
 	e.AmountMinor = int64(d.Amount)
@@ -183,10 +195,16 @@ func mapStatus(status string) onceo.Status {
 	}
 }
 
+var validCurrencies = map[string]bool{
+	"NGN": true, "USD": true, "GBP": true, "ZAR": true, "GHS": true,
+	"KES": true, "UGX": true, "TZS": true, "RWF": true, "XAF": true,
+	"XOF": true, "ZMW": true, "MZN": true, "AOA": true, "BWP": true,
+}
+
 func sanitiseCurrency(raw string) (string, error) {
 	c := strings.ToUpper(strings.TrimSpace(raw))
-	if len(c) != 3 {
-		return "", fmt.Errorf("paystack: invalid currency code %q", raw)
+	if !validCurrencies[c] {
+		return "", fmt.Errorf("paystack: invalid or unsupported currency code %q", raw)
 	}
 	return c, nil
 }

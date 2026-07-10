@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -40,9 +41,9 @@ func handlePaystack(c *gin.Context) {
 	event, err := onceo.Process(c.Request.Context(), provider, store, c.Request.Header, body)
 	if err != nil {
 		switch {
-		case is(err, onceo.ErrInvalidSignature):
+		case errors.Is(err, onceo.ErrInvalidSignature):
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
-		case is(err, onceo.ErrDuplicateEvent):
+		case errors.Is(err, onceo.ErrDuplicateEvent):
 			c.JSON(http.StatusOK, gin.H{"status": "duplicate"})
 		default:
 			log.Printf("processing error: %v", err)
@@ -58,6 +59,4 @@ func listEvents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "not yet implemented"})
 }
 
-func is(err, target error) bool {
-	return err != nil && err.Error() == target.Error()
-}
+

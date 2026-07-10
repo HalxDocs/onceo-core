@@ -18,7 +18,10 @@ Usage:
 
 	// Use a provider adapter directly:
 	headers := r.Header
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		// handle body read failure (log, return 500)
+	}
 
 	adapter, err := paystack.New(os.Getenv("PAYSTACK_SECRET_KEY"))
 	if err != nil {

@@ -50,6 +50,39 @@ func TestStatusFromString(t *testing.T) {
 	}
 }
 
+func TestStatusJSONRoundTrip(t *testing.T) {
+	tests := []Status{StatusPending, StatusSuccess, StatusFailed, StatusReversed}
+	for _, s := range tests {
+		data, err := s.MarshalJSON()
+		if err != nil {
+			t.Fatalf("MarshalJSON(%d) error: %v", s, err)
+		}
+		var got Status
+		if err := got.UnmarshalJSON(data); err != nil {
+			t.Fatalf("UnmarshalJSON(%s) error: %v", string(data), err)
+		}
+		if got != s {
+			t.Errorf("round-trip: got %d, want %d", got, s)
+		}
+	}
+}
+
+func TestStatusUnmarshalInvalid(t *testing.T) {
+	var s Status
+	err := s.UnmarshalJSON([]byte(`"bogus"`))
+	if err == nil {
+		t.Fatal("expected error for unknown status string")
+	}
+}
+
+func TestStatusUnmarshalNumeric(t *testing.T) {
+	var s Status
+	err := s.UnmarshalJSON([]byte(`0`))
+	if err == nil {
+		t.Fatal("expected error for numeric status")
+	}
+}
+
 func TestEventTimestamps(t *testing.T) {
 	now := time.Now().UTC()
 	e := Event{

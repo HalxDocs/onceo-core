@@ -131,6 +131,9 @@ func (p *Provider) ParseC2B(body []byte) (C2BPayload, error) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return payload, onceo.ErrMalformedPayload
 	}
+	if payload.TransID == "" {
+		return payload, onceo.ErrMalformedPayload
+	}
 	return payload, nil
 }
 

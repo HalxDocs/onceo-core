@@ -158,6 +158,21 @@ func TestMemoryStoreWithMaxZero(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreEmptyProviderOrEventID(t *testing.T) {
+	store := NewMemoryStore()
+	ctx := context.Background()
+
+	_, err := store.SaveIfNew(ctx, Event{Provider: "", ProviderEventID: "1"})
+	if err == nil {
+		t.Error("expected error for empty provider")
+	}
+
+	_, err = store.SaveIfNew(ctx, Event{Provider: "paystack", ProviderEventID: ""})
+	if err == nil {
+		t.Error("expected error for empty provider event id")
+	}
+}
+
 func TestMemoryStoreDifferentProviders(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()

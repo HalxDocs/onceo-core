@@ -86,6 +86,18 @@ func TestRedisStoreContextCancel(t *testing.T) {
 	}
 }
 
+func TestRedisStoreEmptyProvider(t *testing.T) {
+	store := &Store{}
+	_, err := store.SaveIfNew(context.Background(), onceo.Event{Provider: "", ProviderEventID: "1"})
+	if err == nil {
+		t.Error("expected error for empty provider")
+	}
+	_, err = store.SaveIfNew(context.Background(), onceo.Event{Provider: "paystack", ProviderEventID: ""})
+	if err == nil {
+		t.Error("expected error for empty provider event id")
+	}
+}
+
 func TestRedisStoreTTL(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()

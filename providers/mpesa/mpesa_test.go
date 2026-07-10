@@ -213,6 +213,14 @@ func TestParseMpesaAmount(t *testing.T) {
 	}
 }
 
+func TestParseC2BEmptyTransID(t *testing.T) {
+	p, _ := New(testToken)
+	_, err := p.ParseC2B([]byte(`{"TransID":""}`))
+	if err == nil {
+		t.Fatal("expected error for empty TransID")
+	}
+}
+
 func TestParseC2B(t *testing.T) {
 	p, _ := New(testToken)
 	body := loadFixture(t, "c2b_payment.json")

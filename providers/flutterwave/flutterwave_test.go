@@ -280,6 +280,63 @@ func TestNormalizeTransferFailed(t *testing.T) {
 	}
 }
 
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	return b
+}
+
+func TestNormalizeChargeInvalidCurrency(t *testing.T) {
+	p, _ := New("dummy_hash")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "charge.completed",
+		"data":  map[string]any{"id": 1, "tx_ref": "r", "amount": 1000, "currency": "NGNx", "status": "successful"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for invalid currency")
+	}
+}
+
+func TestNormalizeTransferInvalidCurrency(t *testing.T) {
+	p, _ := New("dummy_hash")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "transfer.completed",
+		"data":  map[string]any{"id": 1, "reference": "r", "amount": 1000, "currency": "BAD", "status": "successful"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for invalid currency")
+	}
+}
+
+func TestNormalizeChargeMissingID(t *testing.T) {
+	p, _ := New("dummy_hash")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "charge.completed",
+		"data":  map[string]any{"tx_ref": "r", "amount": 1000, "currency": "NGN", "status": "successful"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+}
+
+func TestNormalizeTransferMissingID(t *testing.T) {
+	p, _ := New("dummy_hash")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "transfer.completed",
+		"data":  map[string]any{"reference": "r", "amount": 1000, "currency": "NGN", "status": "successful"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+}
+
 func TestNormalizeChargePending(t *testing.T) {
 	p, _ := New("dummy_hash")
 	body := loadFixture(t, "charge_pending.json")
