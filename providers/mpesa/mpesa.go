@@ -91,10 +91,6 @@ func (p *Provider) Parse(body []byte) (STKCallbackPayload, error) {
 func (p *Provider) Normalize(raw STKCallbackPayload) (onceo.Event, error) {
 	cb := raw.Body.StkCallback
 
-	if cb.CheckoutRequestID == "" {
-		return onceo.Event{}, fmt.Errorf("mpesa: missing CheckoutRequestID, cannot deduplicate safely")
-	}
-
 	event := onceo.Event{
 		Provider:        ProviderName,
 		ProviderEventID: cb.CheckoutRequestID,

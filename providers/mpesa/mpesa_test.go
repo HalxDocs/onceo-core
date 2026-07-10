@@ -192,6 +192,8 @@ func TestParseMpesaAmount(t *testing.T) {
 		{"int64", int64(1500), 150000, false},
 		{"string", "1500", 150000, false},
 		{"string decimal", "12.50", 1250, false},
+		{"json.Number", json.Number("1500"), 150000, false},
+		{"json.Number invalid", json.Number("abc"), 0, true},
 		{"nil", nil, 0, true},
 		{"invalid string", "abc", 0, true},
 		{"bool", true, 0, true},
@@ -276,6 +278,24 @@ func TestNormalizeC2B(t *testing.T) {
 	}
 }
 
+func TestNormalizeC2BNegativeAmount(t *testing.T) {
+	p, _ := New(testToken)
+	payload := C2BPayload{TransID: "t1", TransAmount: "-500", BillRefNumber: "r"}
+	_, err := p.NormalizeC2B(payload)
+	if err == nil {
+		t.Fatal("expected error for negative C2B amount")
+	}
+}
+
+func TestNormalizeC2BInvalidAmount(t *testing.T) {
+	p, _ := New(testToken)
+	payload := C2BPayload{TransID: "t1", TransAmount: "not_a_number", BillRefNumber: "r"}
+	_, err := p.NormalizeC2B(payload)
+	if err == nil {
+		t.Fatal("expected error for invalid C2B amount")
+	}
+}
+
 func TestProcessFullFlow(t *testing.T) {
 	body := loadFixture(t, "stk_success.json")
 
@@ -332,6 +352,78 @@ func TestNormalizeSTKResultCode1032(t *testing.T) {
 	}
 	if event.Status != onceo.StatusFailed {
 		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusFailed)
+	}
+}
+
+func TestNormalizeSTKAmountParseError(t *testing.T) {
+	p, _ := New(testToken)
+	payload := struct {
+		Body struct {
+			StkCallback struct {
+				MerchantRequestID string      `json:"MerchantRequestID"`
+				CheckoutRequestID string      `json:"CheckoutRequestID"`
+				ResultCode         int         `json:"ResultCode"`
+				ResultDesc         string      `json:"ResultDesc"`
+				CallbackMetadata   interface{} `json:"CallbackMetadata"`
+			} `json:"stkCallback"`
+		} `json:"Body"`
+	}{}
+	payload.Body.StkCallback.CheckoutRequestID = "ws_test_bad_amt"
+	payload.Body.StkCallback.ResultCode = 0
+	payload.Body.StkCallback.ResultDesc = "Success"
+	payload.Body.StkCallback.CallbackMetadata = map[string]any{
+		"Item": []map[string]any{
+			{"Name": "Amount", "Value": "not_a_number"},
+		},
+	}
+
+	body, _ := json.Marshal(payload)
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	_, err = p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for invalid Amount value")
+	}
+}
+
+func TestNormalizeSTKSuccessNoMetadata(t *testing.T) {
+	p, _ := New(testToken)
+	payload := struct {
+		Body struct {
+			StkCallback struct {
+				MerchantRequestID string      `json:"MerchantRequestID"`
+				CheckoutRequestID string      `json:"CheckoutRequestID"`
+				ResultCode         int         `json:"ResultCode"`
+				ResultDesc         string      `json:"ResultDesc"`
+				CallbackMetadata   interface{} `json:"CallbackMetadata"`
+			} `json:"stkCallback"`
+		} `json:"Body"`
+	}{}
+	payload.Body.StkCallback.CheckoutRequestID = "ws_test_no_meta"
+	payload.Body.StkCallback.ResultCode = 0
+	payload.Body.StkCallback.CallbackMetadata = nil
+	payload.Body.StkCallback.ResultDesc = "Success"
+
+	body, _ := json.Marshal(payload)
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	if event.Status != onceo.StatusSuccess {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusSuccess)
+	}
+	if event.AmountMinor != 0 {
+		t.Errorf("AmountMinor = %d, want 0", event.AmountMinor)
+	}
+	if event.Currency != "KES" {
+		t.Errorf("Currency = %q, want %q", event.Currency, "KES")
 	}
 }
 

@@ -299,6 +299,96 @@ func TestNormalizeInvalidCurrency(t *testing.T) {
 	}
 }
 
+func TestNormalizeChargeSuccessReversed(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "charge.success",
+		"data":  map[string]any{"id": 1, "status": "reversed", "reference": "r", "amount": 1000, "currency": "NGN"},
+	}))
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	if event.Status != onceo.StatusReversed {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusReversed)
+	}
+}
+
+func TestNormalizeChargeSuccessMapStatusFailed(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "charge.success",
+		"data":  map[string]any{"id": 1, "status": "failed", "reference": "r", "amount": 1000, "currency": "NGN"},
+	}))
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	if event.Status != onceo.StatusFailed {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusFailed)
+	}
+}
+
+func TestNormalizeChargeSuccessPendingStatus(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "charge.success",
+		"data":  map[string]any{"id": 1, "status": "unknown", "reference": "r", "amount": 1000, "currency": "NGN"},
+	}))
+	event, err := p.Normalize(parsed)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	if event.Status != onceo.StatusPending {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusPending)
+	}
+}
+
+func TestNormalizeChargeFailedInvalidCurrency(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "charge.failed",
+		"data":  map[string]any{"id": 1, "status": "failed", "reference": "r", "amount": 1000, "currency": "NGNx"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for invalid currency")
+	}
+}
+
+func TestNormalizeTransferSuccessInvalidCurrency(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "transfer.success",
+		"data":  map[string]any{"id": 1, "status": "success", "reference": "r", "amount": 1000, "currency": "NGNx"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for invalid currency")
+	}
+}
+
+func TestNormalizeTransferFailedInvalidCurrency(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "transfer.failed",
+		"data":  map[string]any{"id": 1, "status": "failed", "reference": "r", "amount": 1000, "currency": "NGNx"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for invalid currency")
+	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	return b
+}
+
 func TestProcessFullFlow(t *testing.T) {
 	secret := "sk_test_abc123"
 	body := loadFixture(t, "charge_success.json")
