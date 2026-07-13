@@ -6,11 +6,27 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
+// Provider adapts a payment provider's webhook format to the canonical
+// Event schema. Implementations MUST verify body integrity unless
+// BodyBound() returns false.
+//
+// BodyBound() indicates whether VerifySignature includes the request body
+// in its signature computation. Providers that return false (e.g.,
+// Flutterwave) provide NO application-level body integrity — they rely
+// entirely on TLS. Callers SHOULD check BodyBound() and refuse to use
+// providers that return false in untrusted network environments.
+//
+// WARNING: Flutterwave's VerifySignature computes a static
+// SHA256(secretHash) that does NOT include the request body.
+// One captured Verif-Hash permits arbitrary body forgery for ALL
+// future webhooks until the secret hash is rotated.
 type Provider[T any] interface {
 	Name() string
+	BodyBound() bool
 	VerifySignature(headers http.Header, body []byte) error
 	Parse(body []byte) (T, error)
 	Normalize(parsed T) (Event, error)
@@ -26,45 +42,108 @@ func generateID(r io.Reader) (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
+func checkCtx(ctx context.Context, providerName string) error {
+	select {
+	case <-ctx.Done():
+		return WrapProviderError(providerName, ctx.Err())
+	default:
+		return nil
+	}
+}
+
+func validateProviderName(name string) error {
+	if name == "" {
+		return fmt.Errorf("provider name must not be empty")
+	}
+	if strings.ContainsAny(name, ":\\") {
+		return fmt.Errorf("provider name %q must not contain ':' or '\\'", name)
+	}
+	return nil
+}
+
 func Process[T any](ctx context.Context, p Provider[T], store Store, headers http.Header, body []byte) (Event, error) {
+	name := p.Name()
+
+	if err := checkCtx(ctx, name); err != nil {
+		return Event{}, err
+	}
+
+	if err := validateProviderName(name); err != nil {
+		return Event{}, WrapProviderError(name, err)
+	}
+
 	if len(body) > MaxBodySize {
-		return Event{}, WrapProviderError(p.Name(), fmt.Errorf("body exceeds maximum size of %d bytes", MaxBodySize))
+		return Event{}, WrapProviderError(name, fmt.Errorf("body exceeds maximum size of %d bytes", MaxBodySize))
 	}
 
 	if err := p.VerifySignature(headers, body); err != nil {
-		return Event{}, WrapProviderError(p.Name(), err)
+		return Event{}, WrapProviderError(name, err)
+	}
+
+	if err := checkCtx(ctx, name); err != nil {
+		return Event{}, err
 	}
 
 	parsed, err := p.Parse(body)
 	if err != nil {
-		return Event{}, WrapProviderError(p.Name(), err)
+		return Event{}, WrapProviderError(name, err)
+	}
+
+	if err := checkCtx(ctx, name); err != nil {
+		return Event{}, err
 	}
 
 	event, err := p.Normalize(parsed)
 	if err != nil {
-		return Event{}, WrapProviderError(p.Name(), err)
+		return Event{}, WrapProviderError(name, err)
 	}
 
 	if event.ProviderEventID == "" {
-		return Event{}, WrapProviderError(p.Name(), ErrEventParseFailed)
+		return Event{}, WrapProviderError(name, ErrEventParseFailed)
+	}
+	if len(event.ProviderEventID) > MaxProviderEventIDLength {
+		return Event{}, WrapProviderError(name, fmt.Errorf("%w: provider event id exceeds %d bytes", ErrEventParseFailed, MaxProviderEventIDLength))
+	}
+	if strings.ContainsAny(event.ProviderEventID, ":\\") {
+		return Event{}, WrapProviderError(name, fmt.Errorf("%w: provider event id contains reserved characters", ErrEventParseFailed))
+	}
+	if event.Type == "" {
+		return Event{}, WrapProviderError(name, fmt.Errorf("%w: event type is empty", ErrEventParseFailed))
+	}
+	if event.AmountMinor < 0 {
+		return Event{}, WrapProviderError(name, fmt.Errorf("%w: negative amount", ErrEventParseFailed))
+	}
+	if event.Currency != "" && len(event.Currency) != 3 {
+		return Event{}, WrapProviderError(name, fmt.Errorf("%w: invalid currency code %q", ErrEventParseFailed, event.Currency))
+	}
+	now := time.Now().UTC()
+	if !event.ReceivedAt.IsZero() && (event.ReceivedAt.After(now.Add(5*time.Minute)) || event.ReceivedAt.Before(now.Add(-1*time.Hour))) {
+		event.ReceivedAt = now
 	}
 
 	id, err := generateID(rand.Reader)
 	if err != nil {
-		return Event{}, fmt.Errorf("onceo: %w", err)
+		return Event{}, WrapProviderError(name, fmt.Errorf("generate event id: %w", err))
 	}
 	event.ID = id
-	event.Provider = p.Name()
-	event.RawPayload = body
-	event.ReceivedAt = time.Now().UTC()
+	event.Provider = name
+	event.RawPayload = append([]byte{}, body...)
+	if event.ReceivedAt.IsZero() {
+		event.ReceivedAt = now
+	}
+
+	if err := checkCtx(ctx, name); err != nil {
+		return Event{}, err
+	}
 
 	created, err := store.SaveIfNew(ctx, event)
 	if err != nil {
-		return Event{}, WrapProviderError(p.Name(), err)
+		return Event{}, WrapProviderError(name, err)
 	}
 	if !created {
-		return Event{}, WrapProviderError(p.Name(), ErrDuplicateEvent)
+		return Event{}, WrapProviderError(name, ErrDuplicateEvent)
 	}
 
+	event.ProcessedAt = time.Now().UTC()
 	return event, nil
 }

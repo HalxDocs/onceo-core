@@ -18,3 +18,10 @@ func SignHMACSHA256(secret []byte, body []byte) string {
 	mac.Write(body)
 	return hex.EncodeToString(mac.Sum(nil))
 }
+
+// HashSHA256 returns the hex-encoded SHA-256 digest of data.
+// Flutterwave's Verif-Hash is SHA256(secretHash), NOT an HMAC.
+func HashSHA256(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
+}

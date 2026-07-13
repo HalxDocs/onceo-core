@@ -98,6 +98,28 @@ func TestRedisStoreEmptyProvider(t *testing.T) {
 	}
 }
 
+func TestRedisStoreClose(t *testing.T) {
+	client := newTestClient(t)
+	store := New(client)
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+}
+
+func TestRedisStoreSaveIfNewWithClosedClient(t *testing.T) {
+	client := newTestClient(t)
+	store := New(client)
+	store.Close()
+
+	_, err := store.SaveIfNew(context.Background(), onceo.Event{
+		Provider: "test", ProviderEventID: "evt_001",
+		Type: "charge.success", Status: onceo.StatusSuccess,
+	})
+	if err == nil {
+		t.Fatal("expected error with closed redis client")
+	}
+}
+
 func TestRedisStoreTTL(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()

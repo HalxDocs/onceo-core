@@ -383,12 +383,9 @@ func TestNormalizeChargeSuccessPendingStatus(t *testing.T) {
 		"event": "charge.success",
 		"data":  map[string]any{"id": 1, "status": "unknown", "reference": "r", "amount": 1000, "currency": "NGN"},
 	}))
-	event, err := p.Normalize(parsed)
-	if err != nil {
-		t.Fatalf("Normalize failed: %v", err)
-	}
-	if event.Status != onceo.StatusPending {
-		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusPending)
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for unknown Paystack status")
 	}
 }
 
@@ -401,6 +398,18 @@ func TestNormalizeChargeFailedInvalidCurrency(t *testing.T) {
 	_, err := p.Normalize(parsed)
 	if err == nil {
 		t.Fatal("expected error for invalid currency")
+	}
+}
+
+func TestNormalizeTransferSuccessUnknownStatus(t *testing.T) {
+	p, _ := New("dummy_key")
+	parsed, _ := p.Parse(mustJSON(t, map[string]any{
+		"event": "transfer.success",
+		"data":  map[string]any{"id": 1, "status": "unknown", "reference": "r", "amount": 1000, "currency": "NGN"},
+	}))
+	_, err := p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for unknown transfer status")
 	}
 }
 

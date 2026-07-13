@@ -206,3 +206,43 @@ func TestMemoryStoreDifferentProviders(t *testing.T) {
 		t.Error("expected e2 to be created")
 	}
 }
+
+func TestMemoryStoreEvictionNonStringElement(t *testing.T) {
+	store := NewMemoryStoreWithMax(1)
+	ctx := context.Background()
+
+	_, err := store.SaveIfNew(ctx, Event{
+		Provider:        "test",
+		ProviderEventID: "evt_001",
+		Type:            "charge.success",
+		ReceivedAt:      time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("SaveIfNew failed: %v", err)
+	}
+
+	store.order.PushFront(42)
+
+	_, err = store.SaveIfNew(ctx, Event{
+		Provider:        "test",
+		ProviderEventID: "evt_002",
+		Type:            "charge.success",
+		ReceivedAt:      time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal("expected non-string element to be cleaned up silently, got error")
+	}
+
+	created, err := store.SaveIfNew(ctx, Event{
+		Provider:        "test",
+		ProviderEventID: "evt_001",
+		Type:            "charge.success",
+		ReceivedAt:      time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("SaveIfNew failed: %v", err)
+	}
+	if !created {
+		t.Error("evt_001 should have been evicted and should be re-creatable")
+	}
+}

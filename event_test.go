@@ -14,7 +14,7 @@ func TestStatusString(t *testing.T) {
 		{StatusSuccess, "success"},
 		{StatusFailed, "failed"},
 		{StatusReversed, "reversed"},
-		{Status(99), "unknown"},
+		{Status(99), "status(99)"},
 	}
 
 	for _, tt := range tests {
@@ -80,6 +80,13 @@ func TestStatusUnmarshalNumeric(t *testing.T) {
 	err := s.UnmarshalJSON([]byte(`0`))
 	if err == nil {
 		t.Fatal("expected error for numeric status")
+	}
+}
+
+func TestStatusMarshalJSONInvalid(t *testing.T) {
+	_, err := Status(99).MarshalJSON()
+	if err == nil {
+		t.Fatal("expected error for undefined Status value")
 	}
 }
 

@@ -6,11 +6,23 @@ answers one question reliably: exactly what happened with a payment, exactly onc
 with a provable audit trail.
 
 The core flow is:
-  1. VerifySignature — per-provider HMAC scheme
-  2. Parse — decode the provider-specific payload
-  3. Normalize — map to the canonical Event schema
-  4. Idempotency check — deduplicate by provider event ID
-  5. Persist — save to a Store implementation
+   1. VerifySignature — per-provider signature scheme
+   2. Parse — decode the provider-specific payload
+   3. Normalize — map to the canonical Event schema
+   4. Idempotency check — deduplicate by provider event ID
+   5. Persist — save to a Store implementation
+
+# Security
+
+Not all providers offer the same level of cryptographic binding. Paystack and
+OPay use HMAC-SHA512 over the request body. Flutterwave uses a static SHA256
+hash of the shared secret — the Verif-Hash header is identical for every
+webhook and does not include the body. M-Pesa uses a pre-shared callback
+token verified via constant-time comparison.
+
+Review each provider's VerifySignature documentation and the package-level
+security warning in providers/flutterwave before choosing a provider for
+production use.
 
 Usage:
 

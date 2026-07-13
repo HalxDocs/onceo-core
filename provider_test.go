@@ -2,6 +2,7 @@ package onceo
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"net/http"
 	"testing"
@@ -24,6 +25,8 @@ type testProvider struct {
 }
 
 func (p *testProvider) Name() string { return p.name }
+
+func (p *testProvider) BodyBound() bool { return true }
 
 func (p *testProvider) VerifySignature(_ http.Header, _ []byte) error {
 	return p.verifyErr
@@ -153,6 +156,43 @@ func TestProcessProviderErrorWrapping(t *testing.T) {
 	}
 }
 
+func TestGenerateIDError(t *testing.T) {
+	_, err := generateID(&failReader{})
+	if err == nil {
+		t.Fatal("expected error from failing reader")
+	}
+}
+
+type failReader struct{}
+
+func (f *failReader) Read(p []byte) (int, error) {
+	return 0, errors.New("read failure")
+}
+
+func TestProcessGenerateIDError(t *testing.T) {
+	ctx := context.Background()
+	provider := &testProvider{
+		name:            "test",
+		providerEventID: "evt_001",
+		normalizeResult: Event{
+			Provider:        "test",
+			ProviderEventID: "evt_001",
+			Type:            "charge.success",
+			Status:          StatusSuccess,
+			AmountMinor:     1000,
+		},
+	}
+	store := NewMemoryStore()
+	origRand := rand.Reader
+	rand.Reader = &failReader{}
+	defer func() { rand.Reader = origRand }()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error from generateID failure")
+	}
+}
+
 func TestProcessBodyTooLarge(t *testing.T) {
 	ctx := context.Background()
 	provider := &testProvider{name: "test"}
@@ -173,6 +213,201 @@ func TestProcessEmptyBody(t *testing.T) {
 	_, err := Process(ctx, provider, store, http.Header{}, []byte{})
 	if err == nil {
 		t.Error("expected error for missing signature")
+	}
+}
+
+func TestProcessParseError(t *testing.T) {
+	ctx := context.Background()
+	provider := &testProvider{
+		name:     "test",
+		parseErr: errors.New("parse failure"),
+	}
+	store := NewMemoryStore()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error from parse failure")
+	}
+}
+
+func TestProcessNormalizeError(t *testing.T) {
+	ctx := context.Background()
+	provider := &testProvider{
+		name:         "test",
+		normalizeErr: errors.New("normalize failure"),
+	}
+	store := NewMemoryStore()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error from normalize failure")
+	}
+}
+
+func TestProcessEmptyProviderEventID(t *testing.T) {
+	ctx := context.Background()
+	provider := &testProvider{
+		name:            "test",
+		providerEventID: "",
+		normalizeResult: Event{
+			Provider:        "test",
+			ProviderEventID: "",
+			Type:            "charge.success",
+			Status:          StatusSuccess,
+		},
+	}
+	store := NewMemoryStore()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error for empty ProviderEventID")
+	}
+}
+
+func TestProcessInvalidProviderNameColon(t *testing.T) {
+	ctx := context.Background()
+	provider := &colonsNameProvider{
+		normalizeResult: Event{
+			Provider:        "pay:stack",
+			ProviderEventID: "evt_001",
+			Type:            "charge.success",
+			Status:          StatusSuccess,
+		},
+	}
+	store := NewMemoryStore()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error for provider name containing colon")
+	}
+}
+
+func TestProcessInvalidProviderNameBackslash(t *testing.T) {
+	ctx := context.Background()
+	provider := &backslashNameProvider{
+		normalizeResult: Event{
+			Provider:        "pay\\stack",
+			ProviderEventID: "evt_001",
+			Type:            "charge.success",
+			Status:          StatusSuccess,
+		},
+	}
+	store := NewMemoryStore()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error for provider name containing backslash")
+	}
+}
+
+func TestProcessStoreError(t *testing.T) {
+	ctx := context.Background()
+	provider := &emptyNameProvider{
+		normalizeResult: Event{
+			Provider:        "",
+			ProviderEventID: "evt_001",
+			Type:            "charge.success",
+			Status:          StatusSuccess,
+		},
+	}
+	store := NewMemoryStore()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error from SaveIfNew failure (empty provider name)")
+	}
+}
+
+type colonsNameProvider struct {
+	normalizeResult Event
+	normalizeErr    error
+}
+
+func (p *colonsNameProvider) Name() string { return "pay:stack" }
+func (p *colonsNameProvider) BodyBound() bool { return true }
+func (p *colonsNameProvider) VerifySignature(_ http.Header, _ []byte) error { return nil }
+func (p *colonsNameProvider) Parse(_ []byte) (testProviderData, error) { return testProviderData{}, nil }
+func (p *colonsNameProvider) Normalize(_ testProviderData) (Event, error) { return p.normalizeResult, p.normalizeErr }
+
+type backslashNameProvider struct {
+	normalizeResult Event
+	normalizeErr    error
+}
+
+func (p *backslashNameProvider) Name() string { return "pay\\stack" }
+func (p *backslashNameProvider) BodyBound() bool { return true }
+func (p *backslashNameProvider) VerifySignature(_ http.Header, _ []byte) error { return nil }
+func (p *backslashNameProvider) Parse(_ []byte) (testProviderData, error) { return testProviderData{}, nil }
+func (p *backslashNameProvider) Normalize(_ testProviderData) (Event, error) { return p.normalizeResult, p.normalizeErr }
+
+type emptyNameProvider struct {
+	normalizeResult Event
+	normalizeErr    error
+}
+
+func (p *emptyNameProvider) Name() string { return "" }
+func (p *emptyNameProvider) BodyBound() bool { return true }
+func (p *emptyNameProvider) VerifySignature(_ http.Header, _ []byte) error { return nil }
+func (p *emptyNameProvider) Parse(_ []byte) (testProviderData, error) { return testProviderData{}, nil }
+func (p *emptyNameProvider) Normalize(_ testProviderData) (Event, error) { return p.normalizeResult, p.normalizeErr }
+
+func TestProcessEmptyType(t *testing.T) {
+	ctx := context.Background()
+	provider := &testProvider{
+		name:            "test",
+		providerEventID: "evt_001",
+		normalizeResult: Event{
+			Provider:        "test",
+			ProviderEventID: "evt_001",
+			Type:            "",
+		},
+	}
+	store := NewMemoryStore()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error for empty event type")
+	}
+}
+
+func TestProcessNegativeAmount(t *testing.T) {
+	ctx := context.Background()
+	provider := &testProvider{
+		name:            "test",
+		providerEventID: "evt_001",
+		normalizeResult: Event{
+			Provider:        "test",
+			ProviderEventID: "evt_001",
+			Type:            "charge.success",
+			AmountMinor:     -1,
+		},
+	}
+	store := NewMemoryStore()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error for negative amount")
+	}
+}
+
+func TestProcessInvalidCurrencyLength(t *testing.T) {
+	ctx := context.Background()
+	provider := &testProvider{
+		name:            "test",
+		providerEventID: "evt_001",
+		normalizeResult: Event{
+			Provider:        "test",
+			ProviderEventID: "evt_001",
+			Type:            "charge.success",
+			AmountMinor:     1000,
+			Currency:        "XXXX",
+		},
+	}
+	store := NewMemoryStore()
+
+	_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error for invalid currency length")
 	}
 }
 
@@ -199,5 +434,8 @@ func TestProcessSetsID(t *testing.T) {
 	}
 	if len(event.RawPayload) == 0 {
 		t.Error("expected RawPayload to be set by Process")
+	}
+	if event.ProcessedAt.IsZero() {
+		t.Error("expected ProcessedAt to be set by Process")
 	}
 }

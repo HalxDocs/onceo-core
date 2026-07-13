@@ -11,6 +11,7 @@ var (
 	ErrUnknownProvider   = errors.New("unknown payment provider")
 	ErrMalformedPayload  = errors.New("malformed webhook payload")
 	ErrMissingHeader     = errors.New("missing required signature header")
+	ErrDuplicateHeader   = errors.New("duplicate header present")
 	ErrEventParseFailed  = errors.New("malformed event: empty or unparseable provider event id")
 	ErrStoreFailed       = errors.New("store operation failed")
 )

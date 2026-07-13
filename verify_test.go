@@ -148,6 +148,16 @@ func TestVerifyHMACSHA512WrongLength(t *testing.T) {
 	}
 }
 
+func TestVerifyHMACSHA256WrongContent(t *testing.T) {
+	secret := []byte("key")
+	body := []byte(`{}`)
+
+	sig := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if err := VerifyHMACSHA256(secret, body, sig); err == nil {
+		t.Error("expected error for wrong signature content")
+	}
+}
+
 func TestVerifyHMACSHA256WrongLength(t *testing.T) {
 	secret := []byte("key")
 	body := []byte(`{}`)
@@ -164,11 +174,11 @@ func TestSingleHeader_Missing_ReturnsErrMissingHeader(t *testing.T) {
 	}
 }
 
-func TestSingleHeader_Duplicate_ReturnsErrInvalidSignature(t *testing.T) {
+func TestSingleHeader_Duplicate_ReturnsErrDuplicateHeader(t *testing.T) {
 	h := http.Header{"X-Test": {"a", "b"}}
 	_, err := SingleHeader(h, "X-Test")
-	if !errors.Is(err, ErrInvalidSignature) {
-		t.Fatalf("expected ErrInvalidSignature, got %v", err)
+	if !errors.Is(err, ErrDuplicateHeader) {
+		t.Fatalf("expected ErrDuplicateHeader, got %v", err)
 	}
 }
 

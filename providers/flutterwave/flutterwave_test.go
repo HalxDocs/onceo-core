@@ -339,16 +339,9 @@ func TestNormalizeChargePending(t *testing.T) {
 		t.Fatalf("Parse failed: %v", err)
 	}
 
-	event, err := p.Normalize(parsed)
-	if err != nil {
-		t.Fatalf("Normalize failed: %v", err)
-	}
-
-	if event.Type != "charge.completed" {
-		t.Errorf("Type = %q, want %q", event.Type, "charge.completed")
-	}
-	if event.Status != onceo.StatusSuccess {
-		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusSuccess)
+	_, err = p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for unknown charge status")
 	}
 }
 
@@ -398,6 +391,21 @@ func TestProcessFullFlow(t *testing.T) {
 	}
 	if event.Reference != "flw_ref_abc123" {
 		t.Errorf("Reference = %q, want %q", event.Reference, "flw_ref_abc123")
+	}
+}
+
+func TestNormalizeTransferUnknownStatus(t *testing.T) {
+	p, _ := New("dummy_hash")
+	body := loadFixture(t, "transfer_unknown_status.json")
+
+	parsed, err := p.Parse(body)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	_, err = p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for unknown transfer status")
 	}
 }
 

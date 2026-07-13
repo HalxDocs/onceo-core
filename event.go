@@ -34,10 +34,13 @@ func (s Status) String() string {
 	if v, ok := statusStrings[s]; ok {
 		return v
 	}
-	return "unknown"
+	return fmt.Sprintf("status(%d)", int(s))
 }
 
 func (s Status) MarshalJSON() ([]byte, error) {
+	if _, ok := statusStrings[s]; !ok {
+		return nil, fmt.Errorf("unknown status value %d", int(s))
+	}
 	return json.Marshal(s.String())
 }
 
@@ -55,7 +58,7 @@ func (s *Status) UnmarshalJSON(data []byte) error {
 }
 
 func StatusFromString(s string) (Status, error) {
-	v, ok := statusValues[s]
+	v, ok := statusValues[strings.ToLower(s)]
 	if !ok {
 		return StatusPending, fmt.Errorf("unknown status: %s", s)
 	}
@@ -71,7 +74,7 @@ type Event struct {
 	AmountMinor     int64     `json:"amount_minor"`
 	Currency        string    `json:"currency"`
 	Reference       string    `json:"reference"`
-	RawPayload      []byte    `json:"raw_payload"`
+	RawPayload      []byte    `json:"raw_payload,omitempty"`
 	ReceivedAt      time.Time `json:"received_at"`
 	ProcessedAt     time.Time `json:"processed_at"`
 }

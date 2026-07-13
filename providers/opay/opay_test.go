@@ -345,10 +345,55 @@ func TestNormalizeInvalidAmount(t *testing.T) {
 	}
 }
 
+func TestParseOpayEmptyAmount(t *testing.T) {
+	_, err := parseOpayAmount("")
+	if err == nil {
+		t.Fatal("expected error for empty amount")
+	}
+}
+
+func TestParseOpayLeadingDecimal(t *testing.T) {
+	got, err := parseOpayAmount(".50")
+	if err != nil {
+		t.Fatalf("parseOpayAmount failed: %v", err)
+	}
+	if got != 50 {
+		t.Errorf("got %d, want 50", got)
+	}
+}
+
+func TestParseOpayTooManyDecimals(t *testing.T) {
+	_, err := parseOpayAmount("100.123")
+	if err == nil {
+		t.Fatal("expected error for too many decimal places")
+	}
+}
+
+func TestParseOpayNonDigitFraction(t *testing.T) {
+	_, err := parseOpayAmount("100.5a")
+	if err == nil {
+		t.Fatal("expected error for non-digit in fraction")
+	}
+}
+
 func TestParseOpayNegativeAmount(t *testing.T) {
 	_, err := parseOpayAmount("-100.00")
 	if err == nil {
 		t.Fatal("expected error for negative amount")
+	}
+}
+
+func TestParseOpayOverflowWhole(t *testing.T) {
+	_, err := parseOpayAmount("92233720368547759.00")
+	if err == nil {
+		t.Fatal("expected error for overflow amount")
+	}
+}
+
+func TestParseOpayOverflowFrac(t *testing.T) {
+	_, err := parseOpayAmount("92233720368547758.50")
+	if err == nil {
+		t.Fatal("expected error for overflow amount with fraction")
 	}
 }
 

@@ -1,3 +1,24 @@
+// Package mpesa implements the onceo Provider for Safaricom M-Pesa callbacks.
+//
+// # Security
+//
+// M-Pesa's native security model is IP whitelisting at the network layer.
+// This library does NOT rely on IP whitelisting. Instead, every callback
+// must carry a shared secret in the X-Onceo-Mpesa-Callback-Token header,
+// which is compared using ConstantTimeCompare.
+//
+// The callback token is a static bearer credential:
+//   - An attacker who observes ONE legitimate callback (e.g., via an HTTP
+//     log, TLS inspection proxy, or compromised intermediary) captures a
+//     token that is valid for ALL future callbacks until the merchant
+//     rotates it.
+//   - Body integrity relies entirely on TLS.
+//   - The token length is enforced at minimum 32 bytes, but entropy is
+//     not measured. Use a cryptographically random token with at least
+//     128 bits of entropy.
+//
+// Integrators should supplement this with M-Pesa's IP whitelisting or
+// additional per-request checks.
 package mpesa
 
 import (
@@ -8,7 +29,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	onceo "github.com/HalxDocs/onceo-core"
 )
@@ -54,7 +74,7 @@ type Provider struct {
 
 func New(callbackToken string) (*Provider, error) {
 	if len(callbackToken) < 32 {
-		return nil, fmt.Errorf("mpesa: callback token must be at least 32 bytes of entropy")
+		return nil, fmt.Errorf("mpesa: callback token must be at least 32 bytes")
 	}
 	return &Provider{callbackToken: callbackToken}, nil
 }
@@ -62,6 +82,8 @@ func New(callbackToken string) (*Provider, error) {
 func (p *Provider) Name() string {
 	return ProviderName
 }
+
+func (p *Provider) BodyBound() bool { return true }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
 	token, err := onceo.SingleHeader(headers, "X-Onceo-Mpesa-Callback-Token")
@@ -93,12 +115,12 @@ func (p *Provider) Normalize(raw STKCallbackPayload) (onceo.Event, error) {
 		ProviderEventID: cb.CheckoutRequestID,
 		Type:            "stk.push",
 		Reference:       cb.MerchantRequestID,
-		ReceivedAt:      time.Now().UTC(),
 	}
 
 	switch cb.ResultCode {
 	case 0:
 		event.Status = onceo.StatusSuccess
+		amountFound := false
 		if cb.CallbackMetadata != nil {
 			for _, item := range cb.CallbackMetadata.Item {
 				switch item.Name {
@@ -108,8 +130,16 @@ func (p *Provider) Normalize(raw STKCallbackPayload) (onceo.Event, error) {
 					if err != nil {
 						return onceo.Event{}, fmt.Errorf("mpesa: normalize: %w", err)
 					}
+					amountFound = true
+				case "MpesaReceiptNumber":
+					if s, ok := item.Value.(string); ok && s != "" {
+						event.Reference = s
+					}
 				}
 			}
+		}
+		if !amountFound {
+			return onceo.Event{}, fmt.Errorf("mpesa: successful stk push missing Amount in CallbackMetadata")
 		}
 		event.Currency = "KES"
 	case 1037:
@@ -134,51 +164,164 @@ func (p *Provider) ParseC2B(body []byte) (C2BPayload, error) {
 	return payload, nil
 }
 
-func (p *Provider) NormalizeC2B(raw C2BPayload) (onceo.Event, error) {
-	f, err := strconv.ParseFloat(strings.TrimSpace(raw.TransAmount), 64)
+func parseC2BAmount(raw string) (int64, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return 0, fmt.Errorf("empty amount")
+	}
+	if strings.HasPrefix(s, "-") {
+		return 0, fmt.Errorf("negative amount %q", raw)
+	}
+	parts := strings.SplitN(s, ".", 2)
+	wholeStr := parts[0]
+	if wholeStr == "" {
+		wholeStr = "0"
+	}
+	whole, err := strconv.ParseInt(wholeStr, 10, 64)
 	if err != nil {
-		return onceo.Event{}, fmt.Errorf("mpesa: invalid c2b amount %q: %w", raw.TransAmount, err)
+		return 0, fmt.Errorf("invalid amount %q: %w", raw, err)
 	}
-	if f < 0 {
-		return onceo.Event{}, fmt.Errorf("mpesa: negative c2b amount %q rejected", raw.TransAmount)
+	frac := int64(0)
+	if len(parts) == 2 {
+		if len(parts[1]) > 2 {
+			return 0, fmt.Errorf("invalid amount %q: more than 2 decimal places", raw)
+		}
+		fracStr := parts[1]
+		for _, c := range fracStr {
+			if c < '0' || c > '9' {
+				return 0, fmt.Errorf("invalid amount %q: non-digit in fractional part", raw)
+			}
+		}
+		for len(fracStr) < 2 {
+			fracStr += "0"
+		}
+		frac, err = strconv.ParseInt(fracStr, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid amount %q: %w", raw, err)
+		}
 	}
-	amount := int64(math.Round(f * 100))
+	if whole > math.MaxInt64/100 {
+		return 0, fmt.Errorf("amount %q exceeds maximum", raw)
+	}
+	result := whole * 100
+	if result > math.MaxInt64-frac {
+		return 0, fmt.Errorf("amount %q exceeds maximum", raw)
+	}
+	return result + frac, nil
+}
+
+func (p *Provider) NormalizeC2B(raw C2BPayload) (onceo.Event, error) {
+	status, err := mapC2BStatus(raw.TransactionType)
+	if err != nil {
+		return onceo.Event{}, err
+	}
+
+	amount, err := parseC2BAmount(raw.TransAmount)
+	if err != nil {
+		return onceo.Event{}, fmt.Errorf("mpesa: c2b amount: %w", err)
+	}
 
 	event := onceo.Event{
 		Provider:        ProviderName,
 		ProviderEventID: raw.TransID,
-		Type:            "c2b.payment",
-		Status:          onceo.StatusSuccess,
+		Type:            "c2b." + strings.ReplaceAll(strings.ToLower(raw.TransactionType), " ", "_"),
+		Status:          status,
 		AmountMinor:     amount,
 		Currency:        "KES",
 		Reference:       raw.BillRefNumber,
-		ReceivedAt:      time.Now().UTC(),
 	}
 
 	return event, nil
 }
 
+func mapC2BStatus(transactionType string) (onceo.Status, error) {
+	switch strings.ToLower(transactionType) {
+	case "pay bill", "buy goods":
+		return onceo.StatusSuccess, nil
+	case "reversal":
+		return onceo.StatusReversed, nil
+	default:
+		return onceo.StatusPending, fmt.Errorf("mpesa: unknown C2B transaction type %q", transactionType)
+	}
+}
+
 func parseMpesaAmount(v interface{}) (int64, error) {
 	switch val := v.(type) {
 	case float64:
+		if val < 0 {
+			return 0, fmt.Errorf("negative amount %v", v)
+		}
+		if val > 1e15 {
+			return 0, fmt.Errorf("amount %v exceeds maximum", v)
+		}
 		return int64(math.Round(val * 100)), nil
 	case int:
-		return int64(val * 100), nil
+		if val < 0 {
+			return 0, fmt.Errorf("negative amount %v", v)
+		}
+		v := int64(val)
+		if v > math.MaxInt64/100 {
+			return 0, fmt.Errorf("amount %v exceeds maximum", v)
+		}
+		return v * 100, nil
 	case int64:
+		if val < 0 {
+			return 0, fmt.Errorf("negative amount %v", v)
+		}
+		if val > math.MaxInt64/100 {
+			return 0, fmt.Errorf("amount %v exceeds maximum", v)
+		}
 		return val * 100, nil
 	case string:
-		f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
-		if err != nil {
-			return 0, fmt.Errorf("unparseable amount string %q: %w", val, err)
-		}
-		return int64(math.Round(f * 100)), nil
+		return parseAmountString(strings.TrimSpace(val), v)
 	case json.Number:
-		f, err := val.Float64()
-		if err != nil {
-			return 0, fmt.Errorf("unparseable json.Number %q: %w", val, err)
-		}
-		return int64(math.Round(f * 100)), nil
+		return parseAmountString(string(val), v)
 	default:
 		return 0, fmt.Errorf("unexpected amount type %T", v)
 	}
+}
+
+func parseAmountString(raw string, orig interface{}) (int64, error) {
+	if raw == "" {
+		return 0, fmt.Errorf("empty amount")
+	}
+	if strings.HasPrefix(raw, "-") {
+		return 0, fmt.Errorf("negative amount %v", orig)
+	}
+	parts := strings.SplitN(raw, ".", 2)
+	wholeStr := parts[0]
+	if wholeStr == "" {
+		wholeStr = "0"
+	}
+	whole, err := strconv.ParseInt(wholeStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid amount %v: %w", orig, err)
+	}
+	frac := int64(0)
+	if len(parts) == 2 {
+		if len(parts[1]) > 2 {
+			return 0, fmt.Errorf("invalid amount %v: more than 2 decimal places", orig)
+		}
+		fracStr := parts[1]
+		for _, c := range fracStr {
+			if c < '0' || c > '9' {
+				return 0, fmt.Errorf("invalid amount %v: non-digit in fractional part", orig)
+			}
+		}
+		for len(fracStr) < 2 {
+			fracStr += "0"
+		}
+		frac, err = strconv.ParseInt(fracStr, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid amount %v: %w", orig, err)
+		}
+	}
+	if whole > math.MaxInt64/100 {
+		return 0, fmt.Errorf("amount %v exceeds maximum", orig)
+	}
+	result := whole * 100
+	if result > math.MaxInt64-frac {
+		return 0, fmt.Errorf("amount %v exceeds maximum", orig)
+	}
+	return result + frac, nil
 }

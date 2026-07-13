@@ -188,15 +188,26 @@ func TestParseMpesaAmount(t *testing.T) {
 		wantErr bool
 	}{
 		{"float64", float64(1500.0), 150000, false},
+		{"float64 negative", float64(-100), 0, true},
 		{"int", 1500, 150000, false},
+		{"int negative", int(-100), 0, true},
 		{"int64", int64(1500), 150000, false},
+		{"int64 negative", int64(-100), 0, true},
 		{"string", "1500", 150000, false},
 		{"string decimal", "12.50", 1250, false},
+		{"string negative", "-100", 0, true},
+		{"string leading decimal", ".5", 50, false},
+		{"string empty", "", 0, true},
 		{"json.Number", json.Number("1500"), 150000, false},
 		{"json.Number invalid", json.Number("abc"), 0, true},
 		{"nil", nil, 0, true},
 		{"invalid string", "abc", 0, true},
 		{"bool", true, 0, true},
+		{"int64 overflow", int64(92233720368547759), 0, true},
+		{"int overflow", int(92233720368547759), 0, true},
+		{"float64 overflow", float64(1e16), 0, true},
+		{"string overflow", "92233720368547759.00", 0, true},
+		{"string overflow frac", "92233720368547758.50", 0, true},
 	}
 
 	for _, tt := range tests {
@@ -266,8 +277,8 @@ func TestNormalizeC2B(t *testing.T) {
 	if event.Provider != "mpesa" {
 		t.Errorf("Provider = %q, want %q", event.Provider, "mpesa")
 	}
-	if event.Type != "c2b.payment" {
-		t.Errorf("Type = %q, want %q", event.Type, "c2b.payment")
+	if event.Type != "c2b.pay_bill" {
+		t.Errorf("Type = %q, want %q", event.Type, "c2b.pay_bill")
 	}
 	if event.Status != onceo.StatusSuccess {
 		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusSuccess)
@@ -301,6 +312,71 @@ func TestNormalizeC2BInvalidAmount(t *testing.T) {
 	_, err := p.NormalizeC2B(payload)
 	if err == nil {
 		t.Fatal("expected error for invalid C2B amount")
+	}
+}
+
+func TestParseC2BAmountDecimal(t *testing.T) {
+	amount, err := parseC2BAmount("2000.00")
+	if err != nil {
+		t.Fatalf("parseC2BAmount failed: %v", err)
+	}
+	if amount != 200000 {
+		t.Errorf("amount = %d, want %d", amount, 200000)
+	}
+}
+
+func TestParseC2BAmountDecimalNoFraction(t *testing.T) {
+	amount, err := parseC2BAmount("2000.5")
+	if err != nil {
+		t.Fatalf("parseC2BAmount failed: %v", err)
+	}
+	if amount != 200050 {
+		t.Errorf("amount = %d, want %d", amount, 200050)
+	}
+}
+
+func TestParseC2BAmountTooManyDecimals(t *testing.T) {
+	_, err := parseC2BAmount("2000.123")
+	if err == nil {
+		t.Fatal("expected error for too many decimal places")
+	}
+}
+
+func TestParseC2BAmountNonDigitFraction(t *testing.T) {
+	_, err := parseC2BAmount("100.-5")
+	if err == nil {
+		t.Fatal("expected error for non-digit in fractional part")
+	}
+}
+
+func TestParseC2BAmountOverflowWhole(t *testing.T) {
+	_, err := parseC2BAmount("92233720368547759.00")
+	if err == nil {
+		t.Fatal("expected error for overflow amount")
+	}
+}
+
+func TestParseC2BAmountOverflowFrac(t *testing.T) {
+	_, err := parseC2BAmount("92233720368547758.50")
+	if err == nil {
+		t.Fatal("expected error for overflow amount with fraction")
+	}
+}
+
+func TestParseC2BAmountEmpty(t *testing.T) {
+	_, err := parseC2BAmount("")
+	if err == nil {
+		t.Fatal("expected error for empty amount")
+	}
+}
+
+func TestParseC2BAmountLeadingDecimal(t *testing.T) {
+	amount, err := parseC2BAmount(".99")
+	if err != nil {
+		t.Fatalf("parseC2BAmount failed: %v", err)
+	}
+	if amount != 99 {
+		t.Errorf("amount = %d, want %d", amount, 99)
 	}
 }
 
@@ -420,18 +496,9 @@ func TestNormalizeSTKSuccessNoMetadata(t *testing.T) {
 		t.Fatalf("Parse failed: %v", err)
 	}
 
-	event, err := p.Normalize(parsed)
-	if err != nil {
-		t.Fatalf("Normalize failed: %v", err)
-	}
-	if event.Status != onceo.StatusSuccess {
-		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusSuccess)
-	}
-	if event.AmountMinor != 0 {
-		t.Errorf("AmountMinor = %d, want 0", event.AmountMinor)
-	}
-	if event.Currency != "KES" {
-		t.Errorf("Currency = %q, want %q", event.Currency, "KES")
+	_, err = p.Normalize(parsed)
+	if err == nil {
+		t.Fatal("expected error for successful STK push without Amount metadata")
 	}
 }
 
@@ -484,4 +551,43 @@ func FuzzParse(f *testing.F) {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
+}
+
+func TestNormalizeC2BUnknownType(t *testing.T) {
+	p, _ := New(testToken)
+	payload := C2BPayload{TransID: "t1", TransAmount: "100", TransactionType: "UnknownType", BillRefNumber: "r"}
+	_, err := p.NormalizeC2B(payload)
+	if err == nil {
+		t.Fatal("expected error for unknown C2B transaction type")
+	}
+}
+
+func TestNormalizeC2BBuyGoods(t *testing.T) {
+	p, _ := New(testToken)
+	payload := C2BPayload{TransID: "t1", TransAmount: "100", TransactionType: "Buy Goods", BillRefNumber: "r"}
+	event, err := p.NormalizeC2B(payload)
+	if err != nil {
+		t.Fatalf("NormalizeC2B failed: %v", err)
+	}
+	if event.Status != onceo.StatusSuccess {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusSuccess)
+	}
+	if event.Type != "c2b.buy_goods" {
+		t.Errorf("Type = %q, want %q", event.Type, "c2b.buy_goods")
+	}
+}
+
+func TestNormalizeC2BReversal(t *testing.T) {
+	p, _ := New(testToken)
+	payload := C2BPayload{TransID: "t1", TransAmount: "100", TransactionType: "Reversal", BillRefNumber: "r"}
+	event, err := p.NormalizeC2B(payload)
+	if err != nil {
+		t.Fatalf("NormalizeC2B failed: %v", err)
+	}
+	if event.Status != onceo.StatusReversed {
+		t.Errorf("Status = %v, want %v", event.Status, onceo.StatusReversed)
+	}
+	if event.Type != "c2b.reversal" {
+		t.Errorf("Type = %q, want %q", event.Type, "c2b.reversal")
+	}
 }

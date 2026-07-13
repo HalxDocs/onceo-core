@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	onceo "github.com/HalxDocs/onceo-core"
@@ -12,7 +13,7 @@ import (
 
 const (
 	prefix     = "onceo:event:"
-	defaultTTL = 24 * time.Hour
+	defaultTTL = 7 * 24 * time.Hour
 )
 
 type Store struct {
@@ -35,15 +36,28 @@ func NewWithTTL(client *redis.Client, ttl time.Duration) *Store {
 }
 
 func key(provider, providerEventID string) string {
-	return prefix + provider + ":" + providerEventID
+	escapedProvider := strings.ReplaceAll(provider, "\\", "\\\\")
+	escapedProvider = strings.ReplaceAll(escapedProvider, ":", "\\:")
+	escaped := strings.ReplaceAll(providerEventID, "\\", "\\\\")
+	escaped = strings.ReplaceAll(escaped, ":", "\\:")
+	return prefix + escapedProvider + ":" + escaped
+}
+
+func (s *Store) Close() error {
+	return s.client.Close()
 }
 
 func (s *Store) SaveIfNew(ctx context.Context, e onceo.Event) (bool, error) {
 	if e.Provider == "" || e.ProviderEventID == "" {
 		return false, fmt.Errorf("%w: provider and provider event id must not be empty", onceo.ErrStoreFailed)
 	}
+	if strings.ContainsAny(e.Provider, ":\\") {
+		return false, fmt.Errorf("%w: provider name %q contains reserved character", onceo.ErrStoreFailed, e.Provider)
+	}
+	if strings.ContainsAny(e.ProviderEventID, ":\\") {
+		return false, fmt.Errorf("%w: provider event id %q contains reserved character", onceo.ErrStoreFailed, e.ProviderEventID)
+	}
 
-	e.ProcessedAt = time.Now().UTC()
 	data, err := json.Marshal(e)
 	if err != nil {
 		return false, fmt.Errorf("%w: marshal event: %w", onceo.ErrStoreFailed, err)

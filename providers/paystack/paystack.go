@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	onceo "github.com/HalxDocs/onceo-core"
 )
@@ -23,7 +22,7 @@ type ChargeSuccessData struct {
 	Domain    string `json:"domain"`
 	Status    string `json:"status"`
 	Reference string `json:"reference"`
-	Amount    int    `json:"amount"`
+	Amount    int64  `json:"amount"`
 	Currency  string `json:"currency"`
 	PaidAt    string `json:"paid_at"`
 	CreatedAt string `json:"created_at"`
@@ -32,7 +31,7 @@ type ChargeSuccessData struct {
 type TransferSuccessData struct {
 	ID          int    `json:"id"`
 	Reference   string `json:"reference"`
-	Amount      int    `json:"amount"`
+	Amount      int64  `json:"amount"`
 	Currency    string `json:"currency"`
 	Status      string `json:"status"`
 	Recipient   string `json:"recipient"`
@@ -53,6 +52,8 @@ func New(secretKey string) (*Provider, error) {
 func (p *Provider) Name() string {
 	return ProviderName
 }
+
+func (p *Provider) BodyBound() bool { return true }
 
 func (p *Provider) VerifySignature(headers http.Header, body []byte) error {
 	signature, err := onceo.SingleHeader(headers, "X-Paystack-Signature")
@@ -75,9 +76,8 @@ func (p *Provider) Parse(body []byte) (WebhookPayload, error) {
 
 func (p *Provider) Normalize(raw WebhookPayload) (onceo.Event, error) {
 	event := onceo.Event{
-		Provider:   ProviderName,
-		Type:       raw.Event,
-		ReceivedAt: time.Now().UTC(),
+		Provider: ProviderName,
+		Type:     raw.Event,
 	}
 
 	switch raw.Event {
@@ -100,15 +100,19 @@ func normalizeChargeSuccess(data json.RawMessage, e onceo.Event) (onceo.Event, e
 		return e, onceo.ErrMalformedPayload
 	}
 
-	if d.ID == 0 {
+	if d.ID <= 0 {
 		return e, fmt.Errorf("%w: charge success event missing id", onceo.ErrEventParseFailed)
 	}
 	e.ProviderEventID = strconv.Itoa(d.ID)
-	e.Status = mapStatus(d.Status)
-	e.AmountMinor = int64(d.Amount)
-	cur, err := sanitiseCurrency(d.Currency)
+	s, err := mapStatus(d.Status)
 	if err != nil {
 		return e, err
+	}
+	e.Status = s
+	e.AmountMinor = d.Amount
+	cur, err2 := sanitiseCurrency(d.Currency)
+	if err2 != nil {
+		return e, err2
 	}
 	e.Currency = cur
 	e.Reference = d.Reference
@@ -122,12 +126,12 @@ func normalizeChargeFailed(data json.RawMessage, e onceo.Event) (onceo.Event, er
 		return e, onceo.ErrMalformedPayload
 	}
 
-	if d.ID == 0 {
+	if d.ID <= 0 {
 		return e, fmt.Errorf("%w: charge failed event missing id", onceo.ErrEventParseFailed)
 	}
 	e.ProviderEventID = strconv.Itoa(d.ID)
 	e.Status = onceo.StatusFailed
-	e.AmountMinor = int64(d.Amount)
+	e.AmountMinor = d.Amount
 	cur, err := sanitiseCurrency(d.Currency)
 	if err != nil {
 		return e, err
@@ -144,15 +148,19 @@ func normalizeTransferSuccess(data json.RawMessage, e onceo.Event) (onceo.Event,
 		return e, onceo.ErrMalformedPayload
 	}
 
-	if d.ID == 0 {
+	if d.ID <= 0 {
 		return e, fmt.Errorf("%w: transfer success event missing id", onceo.ErrEventParseFailed)
 	}
 	e.ProviderEventID = strconv.Itoa(d.ID)
-	e.Status = mapStatus(d.Status)
-	e.AmountMinor = int64(d.Amount)
-	cur, err := sanitiseCurrency(d.Currency)
+	s, err := mapStatus(d.Status)
 	if err != nil {
 		return e, err
+	}
+	e.Status = s
+	e.AmountMinor = d.Amount
+	cur, err2 := sanitiseCurrency(d.Currency)
+	if err2 != nil {
+		return e, err2
 	}
 	e.Currency = cur
 	e.Reference = d.Reference
@@ -166,12 +174,12 @@ func normalizeTransferFailed(data json.RawMessage, e onceo.Event) (onceo.Event, 
 		return e, onceo.ErrMalformedPayload
 	}
 
-	if d.ID == 0 {
+	if d.ID <= 0 {
 		return e, fmt.Errorf("%w: transfer failed event missing id", onceo.ErrEventParseFailed)
 	}
 	e.ProviderEventID = strconv.Itoa(d.ID)
 	e.Status = onceo.StatusFailed
-	e.AmountMinor = int64(d.Amount)
+	e.AmountMinor = d.Amount
 	cur, err := sanitiseCurrency(d.Currency)
 	if err != nil {
 		return e, err
@@ -182,16 +190,16 @@ func normalizeTransferFailed(data json.RawMessage, e onceo.Event) (onceo.Event, 
 	return e, nil
 }
 
-func mapStatus(status string) onceo.Status {
+func mapStatus(status string) (onceo.Status, error) {
 	switch status {
 	case "success":
-		return onceo.StatusSuccess
+		return onceo.StatusSuccess, nil
 	case "failed":
-		return onceo.StatusFailed
+		return onceo.StatusFailed, nil
 	case "reversed":
-		return onceo.StatusReversed
+		return onceo.StatusReversed, nil
 	default:
-		return onceo.StatusPending
+		return onceo.StatusPending, fmt.Errorf("paystack: unknown status %q", status)
 	}
 }
 
