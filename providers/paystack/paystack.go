@@ -29,13 +29,13 @@ type ChargeSuccessData struct {
 }
 
 type TransferSuccessData struct {
-	ID          int    `json:"id"`
-	Reference   string `json:"reference"`
-	Amount      int64  `json:"amount"`
-	Currency    string `json:"currency"`
-	Status      string `json:"status"`
-	Recipient   string `json:"recipient"`
-	CreatedAt   string `json:"created_at"`
+	ID        int    `json:"id"`
+	Reference string `json:"reference"`
+	Amount    int64  `json:"amount"`
+	Currency  string `json:"currency"`
+	Status    string `json:"status"`
+	Recipient string `json:"recipient"`
+	CreatedAt string `json:"created_at"`
 }
 
 type Provider struct {

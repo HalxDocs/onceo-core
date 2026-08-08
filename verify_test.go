@@ -64,10 +64,10 @@ func TestExtractHeader(t *testing.T) {
 	headers.Set("X-Paystack-Signature", "test_sig")
 
 	tests := []struct {
-		name      string
-		key       string
-		want      string
-		wantErr   bool
+		name    string
+		key     string
+		want    string
+		wantErr bool
 	}{
 		{"existing header", "X-Paystack-Signature", "test_sig", false},
 		{"missing header", "X-Missing", "", true},
@@ -193,5 +193,3 @@ func TestSingleHeader_Single_ReturnsValue(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, "value")
 	}
 }
-
-

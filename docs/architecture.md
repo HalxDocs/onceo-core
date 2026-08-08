@@ -16,11 +16,13 @@ Provider webhook
 [3] Normalize -- map to canonical Event schema
     |
     v
-[4] Idempotency check -- Store.SeenBefore()
-    |
-    v
-[5] Persist -- Store.Save()
+[4] Idempotency check + persist -- Store.SaveIfNew (atomic, exactly-once)
 ```
+
+Providers whose dedup key lives in a request header (Svix's `svix-id`) can
+implement the optional `onceo.HeaderDedupKeyer` interface; `Process` derives
+the canonical `ProviderEventID` from the verified headers instead of storing
+per-request state on the provider.
 
 ## Design Decisions
 
@@ -29,8 +31,8 @@ Provider webhook
   through the entire pipeline.
 
 - **Interfaces at extension points**: `Store` is an interface. The core ships
-  `MemoryStore` for testing; Redis and Postgres implementations live in
-  separate packages.
+  `MemoryStore` for testing and local development; the production Redis
+  implementation lives in `store/redis`.
 
 - **No global state**: Everything is explicitly constructed. No init() hooks,
   no package-level variables.

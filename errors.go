@@ -6,14 +6,14 @@ import (
 )
 
 var (
-	ErrInvalidSignature  = errors.New("invalid webhook signature")
-	ErrDuplicateEvent    = errors.New("duplicate event: already processed")
-	ErrUnknownProvider   = errors.New("unknown payment provider")
-	ErrMalformedPayload  = errors.New("malformed webhook payload")
-	ErrMissingHeader     = errors.New("missing required signature header")
-	ErrDuplicateHeader   = errors.New("duplicate header present")
-	ErrEventParseFailed  = errors.New("malformed event: empty or unparseable provider event id")
-	ErrStoreFailed       = errors.New("store operation failed")
+	ErrInvalidSignature = errors.New("invalid webhook signature")
+	ErrDuplicateEvent   = errors.New("duplicate event: already processed")
+	ErrUnknownProvider  = errors.New("unknown payment provider")
+	ErrMalformedPayload = errors.New("malformed webhook payload")
+	ErrMissingHeader    = errors.New("missing required signature header")
+	ErrDuplicateHeader  = errors.New("duplicate header present")
+	ErrEventParseFailed = errors.New("malformed event: empty or unparseable provider event id")
+	ErrStoreFailed      = errors.New("store operation failed")
 )
 
 type ProviderError struct {

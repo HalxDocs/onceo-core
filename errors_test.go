@@ -7,8 +7,8 @@ import (
 
 func TestSentinelErrors(t *testing.T) {
 	tests := []struct {
-		err       error
-		sentinel  error
+		err         error
+		sentinel    error
 		shouldMatch bool
 	}{
 		{ErrInvalidSignature, ErrInvalidSignature, true},

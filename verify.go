@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	SHA512HexLength           = 128
-	SHA256HexLength           = 64
-	MaxBodySize               = 1 << 20
-	MaxProviderEventIDLength   = 256
+	SHA512HexLength          = 128
+	SHA256HexLength          = 64
+	MaxBodySize              = 1 << 20
+	MaxProviderEventIDLength = 256
 )
 
 func VerifyHMACSHA512(secret []byte, body []byte, signature string) error {

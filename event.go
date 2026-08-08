@@ -17,9 +17,9 @@ const (
 )
 
 var statusStrings = map[Status]string{
-	StatusPending: "pending",
-	StatusSuccess: "success",
-	StatusFailed:  "failed",
+	StatusPending:  "pending",
+	StatusSuccess:  "success",
+	StatusFailed:   "failed",
 	StatusReversed: "reversed",
 }
 

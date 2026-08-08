@@ -63,7 +63,6 @@ func TestVerifySignature(t *testing.T) {
 			body:    body,
 			wantErr: true,
 		},
-
 	}
 
 	for _, tt := range tests {
