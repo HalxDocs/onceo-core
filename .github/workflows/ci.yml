@@ -42,7 +42,7 @@ jobs:
 
       - name: Check coverage
         run: |
-          go tool cover -func=coverage.txt | tail -1 | awk '{print $NF}' | sed 's/%//' | awk '{if ($1 < 72) {print "Coverage " $1 "% < 72%"; exit 1}}'
+          go tool cover -func=coverage.txt | tail -1 | awk '{print $NF}' | sed 's/%//' | awk '{if ($1 < 78) {print "Coverage " $1 "% < 78%"; exit 1}}'
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

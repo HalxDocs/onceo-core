@@ -19,7 +19,7 @@ func replayCmd(args []string) error {
 	providerName := fs.String("provider", "", "Payment provider (paystack, flutterwave)")
 	secret := fs.String("secret", "", "Provider secret key for signing")
 	url := fs.String("url", "http://localhost:8080/v1/webhooks", "Target URL")
-	fs.Parse(args)
+	fs.Parse(reorderArgs(args, "provider", "secret", "url"))
 
 	if fs.NArg() < 1 {
 		return fmt.Errorf("usage: onceo replay <file> --url <url> [--secret <secret>] [--provider <provider>]")
