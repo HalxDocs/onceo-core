@@ -39,10 +39,10 @@ type STKCallbackPayload struct {
 	Body struct {
 		StkCallback struct {
 			MerchantRequestID string `json:"MerchantRequestID"`
-			CheckoutRequestID  string `json:"CheckoutRequestID"`
-			ResultCode         int    `json:"ResultCode"`
-			ResultDesc         string `json:"ResultDesc"`
-			CallbackMetadata   *struct {
+			CheckoutRequestID string `json:"CheckoutRequestID"`
+			ResultCode        int    `json:"ResultCode"`
+			ResultDesc        string `json:"ResultDesc"`
+			CallbackMetadata  *struct {
 				Item []struct {
 					Name  string      `json:"Name"`
 					Value interface{} `json:"Value"`
@@ -254,7 +254,12 @@ func parseMpesaAmount(v interface{}) (int64, error) {
 		if val > 1e15 {
 			return 0, fmt.Errorf("amount %v exceeds maximum", v)
 		}
-		return int64(math.Round(val * 100)), nil
+		// Route floats through the decimal string parser so rounding is
+		// based on the decimal representation (e.g. 0.1) rather than the
+		// binary float64 approximation, which would otherwise produce
+		// off-by-one values like 10 for 0.10.
+		raw := strconv.FormatFloat(val, 'f', -1, 64)
+		return parseAmountString(raw, v)
 	case int:
 		if val < 0 {
 			return 0, fmt.Errorf("negative amount %v", v)

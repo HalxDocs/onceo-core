@@ -206,6 +206,10 @@ func TestParseMpesaAmount(t *testing.T) {
 		{"int64 overflow", int64(92233720368547759), 0, true},
 		{"int overflow", int(92233720368547759), 0, true},
 		{"float64 overflow", float64(1e16), 0, true},
+		{"float64 precision .10", 0.10, 10, false},
+		{"float64 precision .1", 0.1, 10, false},
+		{"float64 precision 19.99", 19.99, 1999, false},
+		{"float64 precision 0.01", 0.01, 1, false},
 		{"string overflow", "92233720368547759.00", 0, true},
 		{"string overflow frac", "92233720368547758.50", 0, true},
 	}
@@ -414,9 +418,9 @@ func TestNormalizeSTKResultCode1032(t *testing.T) {
 		Body struct {
 			StkCallback struct {
 				MerchantRequestID string `json:"MerchantRequestID"`
-				CheckoutRequestID  string `json:"CheckoutRequestID"`
-				ResultCode         int    `json:"ResultCode"`
-				ResultDesc         string `json:"ResultDesc"`
+				CheckoutRequestID string `json:"CheckoutRequestID"`
+				ResultCode        int    `json:"ResultCode"`
+				ResultDesc        string `json:"ResultDesc"`
 			} `json:"stkCallback"`
 		} `json:"Body"`
 	}{}
@@ -446,9 +450,9 @@ func TestNormalizeSTKAmountParseError(t *testing.T) {
 			StkCallback struct {
 				MerchantRequestID string      `json:"MerchantRequestID"`
 				CheckoutRequestID string      `json:"CheckoutRequestID"`
-				ResultCode         int         `json:"ResultCode"`
-				ResultDesc         string      `json:"ResultDesc"`
-				CallbackMetadata   interface{} `json:"CallbackMetadata"`
+				ResultCode        int         `json:"ResultCode"`
+				ResultDesc        string      `json:"ResultDesc"`
+				CallbackMetadata  interface{} `json:"CallbackMetadata"`
 			} `json:"stkCallback"`
 		} `json:"Body"`
 	}{}
@@ -479,9 +483,9 @@ func TestNormalizeSTKSuccessNoMetadata(t *testing.T) {
 			StkCallback struct {
 				MerchantRequestID string      `json:"MerchantRequestID"`
 				CheckoutRequestID string      `json:"CheckoutRequestID"`
-				ResultCode         int         `json:"ResultCode"`
-				ResultDesc         string      `json:"ResultDesc"`
-				CallbackMetadata   interface{} `json:"CallbackMetadata"`
+				ResultCode        int         `json:"ResultCode"`
+				ResultDesc        string      `json:"ResultDesc"`
+				CallbackMetadata  interface{} `json:"CallbackMetadata"`
 			} `json:"stkCallback"`
 		} `json:"Body"`
 	}{}
@@ -508,9 +512,9 @@ func TestNormalizeSTKDefaultResultCode(t *testing.T) {
 		Body struct {
 			StkCallback struct {
 				MerchantRequestID string `json:"MerchantRequestID"`
-				CheckoutRequestID  string `json:"CheckoutRequestID"`
-				ResultCode         int    `json:"ResultCode"`
-				ResultDesc         string `json:"ResultDesc"`
+				CheckoutRequestID string `json:"CheckoutRequestID"`
+				ResultCode        int    `json:"ResultCode"`
+				ResultDesc        string `json:"ResultDesc"`
 			} `json:"stkCallback"`
 		} `json:"Body"`
 	}{}

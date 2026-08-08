@@ -6,11 +6,11 @@ answers one question reliably: exactly what happened with a payment, exactly onc
 with a provable audit trail.
 
 The core flow is:
-   1. VerifySignature — per-provider signature scheme
-   2. Parse — decode the provider-specific payload
-   3. Normalize — map to the canonical Event schema
-   4. Idempotency check — deduplicate by provider event ID
-   5. Persist — save to a Store implementation
+ 1. VerifySignature — per-provider signature scheme
+ 2. Parse — decode the provider-specific payload
+ 3. Normalize — map to the canonical Event schema
+ 4. Idempotency check — deduplicate by provider event ID
+ 5. Persist — save to a Store implementation
 
 # Security
 
@@ -30,7 +30,7 @@ Usage:
 
 	// Use a provider adapter directly:
 	headers := r.Header
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBodySize))
 	if err != nil {
 		// handle body read failure (log, return 500)
 	}

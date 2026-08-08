@@ -5,15 +5,27 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 
-	"github.com/gin-gonic/gin"
 	onceo "github.com/HalxDocs/onceo-core"
 	"github.com/HalxDocs/onceo-core/providers/paystack"
+	"github.com/gin-gonic/gin"
 )
 
 var store = onceo.NewMemoryStore()
+var provider *paystack.Provider
 
 func main() {
+	secret := os.Getenv("PAYSTACK_SECRET_KEY")
+	if secret == "" {
+		log.Fatal("PAYSTACK_SECRET_KEY must be set")
+	}
+	var err error
+	provider, err = paystack.New(secret)
+	if err != nil {
+		log.Fatalf("paystack.New: %v", err)
+	}
+
 	r := gin.Default()
 
 	r.POST("/v1/webhooks/paystack", handlePaystack)
@@ -24,19 +36,13 @@ func main() {
 }
 
 func handlePaystack(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, onceo.MaxBodySize)
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read body"})
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large or unreadable"})
 		return
 	}
 	defer c.Request.Body.Close()
-
-	provider, err := paystack.New("sk_test_abc123")
-	if err != nil {
-		log.Printf("paystack.New: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "provider init failed"})
-		return
-	}
 
 	event, err := onceo.Process(c.Request.Context(), provider, store, c.Request.Header, body)
 	if err != nil {
@@ -58,5 +64,3 @@ func handlePaystack(c *gin.Context) {
 func listEvents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "not yet implemented"})
 }
-
-

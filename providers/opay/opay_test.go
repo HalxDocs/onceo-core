@@ -118,7 +118,7 @@ func TestVerifySignature(t *testing.T) {
 }
 
 func TestParse(t *testing.T) {
-	p, _ := New( "dummy_key")
+	p, _ := New("dummy_key")
 
 	tests := []struct {
 		name    string
@@ -165,7 +165,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestNormalizePaymentSuccessful(t *testing.T) {
-	p, _ := New( "dummy_key")
+	p, _ := New("dummy_key")
 	body := loadFixture(t, "payment_successful.json")
 
 	parsed, err := p.Parse(body)
@@ -229,7 +229,7 @@ func TestNormalizeRefundSuccessful(t *testing.T) {
 }
 
 func TestNormalizePaymentFailed(t *testing.T) {
-	p, _ := New( "dummy_key")
+	p, _ := New("dummy_key")
 	body := loadFixture(t, "payment_failed.json")
 
 	parsed, err := p.Parse(body)
@@ -260,7 +260,7 @@ func TestNormalizeUnknownEvent(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(raw)
-	p, _ := New( "dummy_key")
+	p, _ := New("dummy_key")
 	parsed, err := p.Parse(body)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
@@ -273,7 +273,7 @@ func TestNormalizeUnknownEvent(t *testing.T) {
 }
 
 func TestProviderName(t *testing.T) {
-	p, _ := New( "dummy_key")
+	p, _ := New("dummy_key")
 	if name := p.Name(); name != "opay" {
 		t.Errorf("Name() = %q, want %q", name, "opay")
 	}
@@ -333,7 +333,7 @@ func TestNormalizeInvalidAmount(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(raw)
-	p, _ := New( "dummy_key")
+	p, _ := New("dummy_key")
 	parsed, err := p.Parse(body)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
@@ -426,4 +426,27 @@ func TestProcessFullFlow(t *testing.T) {
 	if event.Reference != "opay_ref_001" {
 		t.Errorf("Reference = %q, want %q", event.Reference, "opay_ref_001")
 	}
+}
+
+func FuzzParse(f *testing.F) {
+	fixtures := []string{"payment_successful.json", "payment_failed.json"}
+	for _, name := range fixtures {
+		data, err := os.ReadFile("testdata/" + name)
+		if err == nil {
+			f.Add(data)
+		}
+	}
+	f.Add([]byte(`{}`))
+	f.Add([]byte(`{"event_type":""}`))
+	f.Add([]byte(`not json`))
+	f.Add([]byte(`{"event_type":"PAYMENT_SUCCESSFUL","data":{}}`))
+
+	p, _ := New("dummy_key")
+
+	f.Fuzz(func(t *testing.T, body []byte) {
+		_, err := p.Parse(body)
+		if err != nil && err != onceo.ErrMalformedPayload {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
 }

@@ -32,6 +32,19 @@ type Provider[T any] interface {
 	Normalize(parsed T) (Event, error)
 }
 
+// HeaderDedupKeyer is an optional interface a Provider may implement when
+// its dedup key lives in a request header (e.g. Svix's svix-id) rather than
+// in the body. Process calls it after signature verification succeeds and
+// uses the returned value as the canonical ProviderEventID.
+//
+// Implementations MUST be safe for concurrent use: they must not carry
+// per-request mutable state on the Provider, because Process may run
+// concurrently for different requests sharing one provider instance.
+// Return an error (e.g. a missing or duplicate header) to fail the request.
+type HeaderDedupKeyer interface {
+	HeaderDedupKey(headers http.Header) (string, error)
+}
+
 func generateID(r io.Reader) (string, error) {
 	b := make([]byte, 16)
 	if _, err := io.ReadFull(r, b); err != nil {
@@ -96,6 +109,16 @@ func Process[T any](ctx context.Context, p Provider[T], store Store, headers htt
 	event, err := p.Normalize(parsed)
 	if err != nil {
 		return Event{}, WrapProviderError(name, err)
+	}
+
+	// Providers whose dedup key is carried by a request header (Svix) derive
+	// it here, after verification, instead of storing per-request state.
+	if hd, ok := p.(HeaderDedupKeyer); ok {
+		id, err := hd.HeaderDedupKey(headers)
+		if err != nil {
+			return Event{}, WrapProviderError(name, err)
+		}
+		event.ProviderEventID = id
 	}
 
 	if event.ProviderEventID == "" {

@@ -17,7 +17,7 @@ func main() {
 
 	secret := os.Getenv("PAYSTACK_SECRET_KEY")
 	if secret == "" {
-		secret = "sk_test_abc123"
+		log.Fatal("PAYSTACK_SECRET_KEY must be set")
 	}
 
 	headers := http.Header{}

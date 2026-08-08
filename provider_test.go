@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 )
@@ -15,13 +16,13 @@ type testProviderData struct {
 }
 
 type testProvider struct {
-	name             string
-	verifyErr        error
-	parseResult      testProviderData
-	parseErr         error
-	normalizeResult  Event
-	normalizeErr     error
-	providerEventID  string
+	name            string
+	verifyErr       error
+	parseResult     testProviderData
+	parseErr        error
+	normalizeResult Event
+	normalizeErr    error
+	providerEventID string
 }
 
 func (p *testProvider) Name() string { return p.name }
@@ -323,33 +324,43 @@ type colonsNameProvider struct {
 	normalizeErr    error
 }
 
-func (p *colonsNameProvider) Name() string { return "pay:stack" }
-func (p *colonsNameProvider) BodyBound() bool { return true }
+func (p *colonsNameProvider) Name() string                                  { return "pay:stack" }
+func (p *colonsNameProvider) BodyBound() bool                               { return true }
 func (p *colonsNameProvider) VerifySignature(_ http.Header, _ []byte) error { return nil }
-func (p *colonsNameProvider) Parse(_ []byte) (testProviderData, error) { return testProviderData{}, nil }
-func (p *colonsNameProvider) Normalize(_ testProviderData) (Event, error) { return p.normalizeResult, p.normalizeErr }
+func (p *colonsNameProvider) Parse(_ []byte) (testProviderData, error) {
+	return testProviderData{}, nil
+}
+func (p *colonsNameProvider) Normalize(_ testProviderData) (Event, error) {
+	return p.normalizeResult, p.normalizeErr
+}
 
 type backslashNameProvider struct {
 	normalizeResult Event
 	normalizeErr    error
 }
 
-func (p *backslashNameProvider) Name() string { return "pay\\stack" }
-func (p *backslashNameProvider) BodyBound() bool { return true }
+func (p *backslashNameProvider) Name() string                                  { return "pay\\stack" }
+func (p *backslashNameProvider) BodyBound() bool                               { return true }
 func (p *backslashNameProvider) VerifySignature(_ http.Header, _ []byte) error { return nil }
-func (p *backslashNameProvider) Parse(_ []byte) (testProviderData, error) { return testProviderData{}, nil }
-func (p *backslashNameProvider) Normalize(_ testProviderData) (Event, error) { return p.normalizeResult, p.normalizeErr }
+func (p *backslashNameProvider) Parse(_ []byte) (testProviderData, error) {
+	return testProviderData{}, nil
+}
+func (p *backslashNameProvider) Normalize(_ testProviderData) (Event, error) {
+	return p.normalizeResult, p.normalizeErr
+}
 
 type emptyNameProvider struct {
 	normalizeResult Event
 	normalizeErr    error
 }
 
-func (p *emptyNameProvider) Name() string { return "" }
-func (p *emptyNameProvider) BodyBound() bool { return true }
+func (p *emptyNameProvider) Name() string                                  { return "" }
+func (p *emptyNameProvider) BodyBound() bool                               { return true }
 func (p *emptyNameProvider) VerifySignature(_ http.Header, _ []byte) error { return nil }
-func (p *emptyNameProvider) Parse(_ []byte) (testProviderData, error) { return testProviderData{}, nil }
-func (p *emptyNameProvider) Normalize(_ testProviderData) (Event, error) { return p.normalizeResult, p.normalizeErr }
+func (p *emptyNameProvider) Parse(_ []byte) (testProviderData, error)      { return testProviderData{}, nil }
+func (p *emptyNameProvider) Normalize(_ testProviderData) (Event, error) {
+	return p.normalizeResult, p.normalizeErr
+}
 
 func TestProcessEmptyType(t *testing.T) {
 	ctx := context.Background()
@@ -437,5 +448,58 @@ func TestProcessSetsID(t *testing.T) {
 	}
 	if event.ProcessedAt.IsZero() {
 		t.Error("expected ProcessedAt to be set by Process")
+	}
+}
+
+func TestProcessConcurrentDuplicateDelivery(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+
+	provider := &testProvider{
+		name:            "test",
+		providerEventID: "evt_concurrent",
+		normalizeResult: Event{
+			ID:              "evt_concurrent",
+			Provider:        "test",
+			ProviderEventID: "evt_concurrent",
+			Type:            "charge.success",
+			Status:          StatusSuccess,
+			AmountMinor:     50000,
+			Currency:        "NGN",
+			Reference:       "ref_concurrent",
+			ReceivedAt:      time.Now().UTC(),
+		},
+	}
+
+	const goroutines = 32
+	var wg sync.WaitGroup
+	results := make(chan error, goroutines)
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := Process(ctx, provider, store, http.Header{}, []byte(`{}`))
+			results <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	created, duplicates := 0, 0
+	for err := range results {
+		if err == nil {
+			created++
+		} else if errors.Is(err, ErrDuplicateEvent) {
+			duplicates++
+		} else {
+			t.Fatalf("unexpected error from Process: %v", err)
+		}
+	}
+
+	if created != 1 {
+		t.Errorf("expected exactly 1 created event, got %d (duplicates=%d)", created, duplicates)
+	}
+	if duplicates != goroutines-1 {
+		t.Errorf("expected %d duplicate rejections, got %d", goroutines-1, duplicates)
 	}
 }

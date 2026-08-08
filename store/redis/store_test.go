@@ -153,3 +153,86 @@ func TestRedisStoreTTL(t *testing.T) {
 		t.Error("expected event to expire and be re-creatable after TTL")
 	}
 }
+
+func TestRedisStoreKeyIncludesNamespace(t *testing.T) {
+	nsStore, err := NewWithNamespace(&redis.Client{}, "acct_1")
+	if err != nil {
+		t.Fatalf("NewWithNamespace failed: %v", err)
+	}
+	plain := New(&redis.Client{})
+	if got := key(nsStore.namespace, "paystack", "evt_001"); got != "onceo:event:acct_1::paystack:evt_001" {
+		t.Errorf("namespaced key = %q", got)
+	}
+	if got := key(plain.namespace, "paystack", "evt_001"); got != "onceo:event:paystack:evt_001" {
+		t.Errorf("un-namespaced key = %q", got)
+	}
+	if nsStore.namespace != "acct_1" {
+		t.Errorf("namespace = %q, want acct_1", nsStore.namespace)
+	}
+}
+
+func TestRedisStoreNamespaceIsolation(t *testing.T) {
+	client := newTestClient(t)
+	defer client.Close()
+	defer cleanup(t, client)
+
+	ctx := context.Background()
+	nsA, err := NewWithNamespace(client, "tenant_a")
+	if err != nil {
+		t.Fatalf("NewWithNamespace failed: %v", err)
+	}
+	nsB, err := NewWithNamespace(client, "tenant_b")
+	if err != nil {
+		t.Fatalf("NewWithNamespace failed: %v", err)
+	}
+
+	event := onceo.Event{
+		ID: "evt_001", Provider: "paystack", ProviderEventID: "evt_001",
+		Type: "charge.success", Status: onceo.StatusSuccess,
+		AmountMinor: 50000, Currency: "NGN", Reference: "ref_001",
+		ReceivedAt: time.Now().UTC(),
+	}
+
+	ca, err := nsA.SaveIfNew(ctx, event)
+	if err != nil {
+		t.Fatalf("nsA SaveIfNew failed: %v", err)
+	}
+	cb, err := nsB.SaveIfNew(ctx, event)
+	if err != nil {
+		t.Fatalf("nsB SaveIfNew failed: %v", err)
+	}
+	if !ca || !cb {
+		t.Fatalf("expected both namespaces to create, got %v/%v", ca, cb)
+	}
+
+	ca2, err := nsA.SaveIfNew(ctx, event)
+	if err != nil {
+		t.Fatalf("nsA second SaveIfNew failed: %v", err)
+	}
+	cb2, err := nsB.SaveIfNew(ctx, event)
+	if err != nil {
+		t.Fatalf("nsB second SaveIfNew failed: %v", err)
+	}
+	if ca2 {
+		t.Error("expected nsA duplicate to be rejected")
+	}
+	if cb2 {
+		t.Error("expected nsB duplicate to be rejected")
+	}
+}
+
+func TestNewWithNamespaceInvalid(t *testing.T) {
+	if _, err := NewWithNamespace(&redis.Client{}, "bad:name"); err == nil {
+		t.Error("expected error for namespace containing ':'")
+	}
+	if _, err := NewWithNamespace(&redis.Client{}, "bad\\name"); err == nil {
+		t.Error("expected error for namespace containing '\\'")
+	}
+	s, err := NewWithNamespace(&redis.Client{}, "")
+	if err != nil {
+		t.Fatalf("empty namespace should be allowed: %v", err)
+	}
+	if s.namespace != "" {
+		t.Error("empty namespace should leave namespace unset")
+	}
+}

@@ -207,6 +207,90 @@ func TestMemoryStoreDifferentProviders(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreNamespaceIsolation(t *testing.T) {
+	ctx := context.Background()
+
+	nsA, err := NewMemoryStoreWithNamespace("tenant_a")
+	if err != nil {
+		t.Fatalf("NewMemoryStoreWithNamespace failed: %v", err)
+	}
+	nsB, err := NewMemoryStoreWithNamespace("tenant_b")
+	if err != nil {
+		t.Fatalf("NewMemoryStoreWithNamespace failed: %v", err)
+	}
+
+	evt := Event{
+		ID: "evt_001", Provider: "paystack", ProviderEventID: "evt_001",
+		Type: "charge.success", Status: StatusSuccess,
+		AmountMinor: 1000, Currency: "NGN", Reference: "ref_001",
+		ReceivedAt: time.Now().UTC(),
+	}
+
+	// Same provider+id in two namespaces must both be created: no cross-tenant collision.
+	ca, err := nsA.SaveIfNew(ctx, evt)
+	if err != nil {
+		t.Fatalf("nsA SaveIfNew failed: %v", err)
+	}
+	cb, err := nsB.SaveIfNew(ctx, evt)
+	if err != nil {
+		t.Fatalf("nsB SaveIfNew failed: %v", err)
+	}
+	if !ca || !cb {
+		t.Fatalf("expected both namespaces to create event, got %v/%v", ca, cb)
+	}
+
+	// Dedup is per-namespace: repeat in A is a duplicate, repeat in B is a duplicate.
+	ca2, err := nsA.SaveIfNew(ctx, evt)
+	if err != nil {
+		t.Fatalf("nsA SaveIfNew (2nd) failed: %v", err)
+	}
+	cb2, err := nsB.SaveIfNew(ctx, evt)
+	if err != nil {
+		t.Fatalf("nsB SaveIfNew (2nd) failed: %v", err)
+	}
+	if ca2 {
+		t.Error("expected nsA second save to be a duplicate")
+	}
+	if cb2 {
+		t.Error("expected nsB second save to be a duplicate")
+	}
+}
+
+func TestNewMemoryStoreWithNamespaceInvalid(t *testing.T) {
+	if _, err := NewMemoryStoreWithNamespace("bad:name"); err == nil {
+		t.Error("expected error for namespace containing ':'")
+	}
+	if _, err := NewMemoryStoreWithNamespace("bad\\name"); err == nil {
+		t.Error("expected error for namespace containing '\\'")
+	}
+	if s, err := NewMemoryStoreWithNamespace(""); err == nil && s.namespace != "" {
+		t.Error("empty namespace should keep namespace unset")
+	}
+}
+
+func TestMemoryStoreNamespaceAgainstDefaultIsolated(t *testing.T) {
+	ctx := context.Background()
+	defaultStore := NewMemoryStore()
+	nsStore, err := NewMemoryStoreWithNamespace("acct_1")
+	if err != nil {
+		t.Fatalf("NewMemoryStoreWithNamespace failed: %v", err)
+	}
+	evt := Event{
+		Provider: "paystack", ProviderEventID: "evt_001",
+		Type: "charge.success", Status: StatusSuccess, ReceivedAt: time.Now().UTC(),
+	}
+	if _, err := defaultStore.SaveIfNew(ctx, evt); err != nil {
+		t.Fatalf("default SaveIfNew failed: %v", err)
+	}
+	created, err := nsStore.SaveIfNew(ctx, evt)
+	if err != nil {
+		t.Fatalf("ns SaveIfNew failed: %v", err)
+	}
+	if !created {
+		t.Error("expected namespaced store to treat same event as new")
+	}
+}
+
 func TestMemoryStoreEvictionNonStringElement(t *testing.T) {
 	store := NewMemoryStoreWithMax(1)
 	ctx := context.Background()

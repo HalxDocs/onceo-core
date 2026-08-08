@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 
 	onceo "github.com/HalxDocs/onceo-core"
 	"github.com/HalxDocs/onceo-core/providers/paystack"
@@ -13,7 +14,19 @@ import (
 
 var store = onceo.NewMemoryStore()
 
+var provider *paystack.Provider
+
 func main() {
+	secret := os.Getenv("PAYSTACK_SECRET_KEY")
+	if secret == "" {
+		log.Fatal("PAYSTACK_SECRET_KEY must be set")
+	}
+	var err error
+	provider, err = paystack.New(secret)
+	if err != nil {
+		log.Fatalf("paystack.New: %v", err)
+	}
+
 	http.HandleFunc("/webhook/paystack", handlePaystack)
 
 	log.Println("listening on :8080")
@@ -28,17 +41,16 @@ func handlePaystack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, onceo.MaxBodySize))
 	if err != nil {
-		http.Error(w, "failed to read body", http.StatusInternalServerError)
+		if errors.Is(err, http.ErrHandlerTimeout) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "failed to read body", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
-
-	provider, err := paystack.New("sk_test_abc123")
-	if err != nil {
-		log.Fatalf("paystack.New: %v", err)
-	}
 
 	event, err := onceo.Process(r.Context(), provider, store, r.Header, body)
 	if err != nil {
