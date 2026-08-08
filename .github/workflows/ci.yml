@@ -35,7 +35,10 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # .golangci.yml uses the v1 config schema; golangci-lint v2 (current
+          # "latest") rejects it, so pin a v1 release until the config is
+          # migrated. Bump deliberately.
+          version: v1.64.8
 
       - name: Test with race detector
         run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic -count=1 -timeout=120s
